@@ -1,0 +1,59 @@
+# duckpipe config. deploy.sh installs it on the server as /etc/duckpipe.yaml:
+# change it here and deploy (ONLY=duckpipe ../deploy-all.sh), not on the server.
+
+lake:
+  # Where the lake's catalog (table list, schemas, snapshots) is kept:
+  #   ducklake:sqlite:/path/catalog.sqlite      one machine; others can read it while duckpipe runs
+  #   ducklake:postgres:dbname=lake host=...    query from any machine
+  #   ducklake:/path/catalog.ducklake           duckpipe only; nothing else can open it while it runs
+  catalog: ducklake:postgres:dbname=ducklake host=127.0.0.1 user=ducklake
+  # Where table data is written, as Parquet. Only used when the catalog is
+  # first created.
+  data_path: s3://lake/
+  # Tables are queried as <name>.<schema>.<table>.
+  name: lake
+
+# How often to look for new files. "sudo systemctl kill -s HUP duckpipe" polls now.
+poll: 30s
+
+maintenance:
+  # Merge the small Parquet files that frequent loads create. 0 disables.
+  every: 6h
+  # Drop snapshots older than this, and the files only they use. Time travel
+  # reaches back this far. 0 (or unset) keeps everything.
+  keep_snapshots: 720h
+
+pipes:
+  # HM Land Registry price paid data (pp-complete.csv, monthly updates): CSV
+  # without a header, so the columns are named here. Kept as text; cast later.
+  - name: price_paid
+    bucket: home
+    prefix: uk/price-paid/
+    pattern: "*.csv"
+    table: uk.price_paid
+    options: "header = false, all_varchar = true, names = ['transaction_id', 'price', 'date_of_transfer', 'postcode', 'property_type', 'old_new', 'duration', 'paon', 'saon', 'street', 'locality', 'town_city', 'district', 'county', 'ppd_category_type', 'record_status']"
+
+  # Every *.csv below s3://home/raw/orders/ goes into lake.raw.orders.
+  - name: orders
+    bucket: home
+    prefix: raw/orders/
+    pattern: "*.csv"
+    table: raw.orders
+    # Extra read_csv options, as SQL. all_varchar keeps every column as text,
+    # so a file can't fail on a type it wasn't expected to have.
+    # options: "delim = ';', header = true, all_varchar = true"
+
+  # JSON / NDJSON events; the format comes from the extension (.json, .jsonl,
+  # .ndjson, optionally .gz or .zst). Table defaults to main.<name>.
+  - name: events
+    bucket: home
+    prefix: raw/events/
+    pattern: "*.json*"
+
+  # Parquet, any file name, loaded up to 200 files per transaction.
+  # - name: trips
+  #   bucket: home
+  #   prefix: raw/trips/
+  #   format: parquet
+  #   table: raw.trips
+  #   batch: 200

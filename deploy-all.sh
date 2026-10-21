@@ -12,6 +12,7 @@
 #   ducklake       linux-scripts/ducklake-setup.sh PostgreSQL catalog + lake bucket
 #   garage-ui      garage-ui/deploy.sh
 #   lake-ui        lake-ui/deploy.sh               after ducklake: reads its catalog settings
+#   lakeshape      lakeshape/deploy.sh             after ducklake: builds ../analytics into the lake
 #   url-to-bucket  url-to-bucket/deploy.sh         service; after relay: takes download requests from it
 #   mcp-hub        mcp-hub/deploy.sh               MCP gateway; after vigil: copies its MCP token
 #   foreman        foreman/deploy.sh               agents; after mcp-hub: copies its token
@@ -47,7 +48,7 @@ SSH_PORT="${SSH_PORT:-2222}"
 ONLY="${ONLY:-}"
 SKIP="${SKIP:-}"
 
-ORDER=(garage relay vigil duckpipe ducklake garage-ui lake-ui url-to-bucket mcp-hub foreman home llama)
+ORDER=(garage relay vigil duckpipe ducklake garage-ui lake-ui lakeshape url-to-bucket mcp-hub foreman home llama)
 OPT_IN=(duckpipe llama)   # skipped unless named in ONLY
 
 log() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
@@ -68,6 +69,7 @@ vars() {
     ducklake) echo "LAKE_BUCKET KEY_NAME PG_DB PG_USER S3_ENDPOINT DUCKDB_VERSION LAN_CIDR HOST_IP" ;;
     garage-ui) echo "LISTEN BUCKETS KEY_NAME UI_USER ENDPOINT" ;;
     lake-ui) echo "LISTEN LAKE_BUCKET KEY_NAME PG_ROLE UI_USER ENDPOINT" ;;
+    lakeshape) echo "PROJECT LAKE_BUCKET KEY_NAME ENDPOINT DUCKDB_VERSION" ;;
     url-to-bucket) echo "BUCKETS KEY_NAME WORKERS ENDPOINT LISTEN UI_USER" ;;
     mcp-hub) echo "LISTEN EXTRA_ARGS" ;;
     foreman) echo "LISTEN EXTRA_ARGS" ;;
@@ -160,7 +162,7 @@ done
 log "Status on $HOST"
 ssh -p "$SSH_PORT" "$HOST" 'bash -s' <<'EOF'
 row() { printf '  %-14s %s\n' "$1" "$2"; }
-for u in garage vigil relay url-to-bucket mcp-hub foreman duckpipe postgresql garage-ui lake-ui home llama-server; do
+for u in garage vigil relay url-to-bucket mcp-hub foreman duckpipe lakeshape postgresql garage-ui lake-ui home llama-server; do
   state=$(systemctl is-active "$u" 2>/dev/null)
   systemctl cat "$u" >/dev/null 2>&1 || state="not installed"
   row "$u" "$state"
