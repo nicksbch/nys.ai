@@ -1,0 +1,18 @@
+models:
+  - name: stg_price_paid
+    columns:
+      - name: transaction_id
+        tests: [not_null, unique]
+      - name: price
+        tests: [not_null]
+      - name: date_of_transfer
+        tests: [not_null]
+      - name: property_type   # Detached, Semi, Terraced, Flat, Other
+        tests:
+          - accepted_values: {values: [D, S, T, F, O], severity: warn}
+      - name: duration        # Freehold, Leasehold, Unknown
+        tests:
+          - accepted_values: {values: [F, L, U], severity: warn}
+      - name: ppd_category_type
+        tests:
+          - accepted_values: {values: [A, B], severity: warn}

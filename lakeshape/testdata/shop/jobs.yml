@@ -1,0 +1,10 @@
+jobs:
+  - name: orders
+    select: source:raw.orders+
+    on:
+      - topic: duckpipe.ingest
+        type: ok
+        data: {table: lake.raw.orders}
+  - name: nightly
+    select: tag:daily
+    schedule: "0 3 * * *"

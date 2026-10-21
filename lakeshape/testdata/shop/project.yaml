@@ -1,0 +1,11 @@
+name: shop
+lake:
+  catalog: ducklake:postgres:dbname=ducklake
+  data_path: s3://lake/
+schema: analytics
+vars:
+  min_amount: 0
+models:
+  staging: {schema: staging, materialized: view, tags: [staging]}
+  marts: {schema: marts, materialized: table, tags: daily}
+  marts/finance: {schema: finance}

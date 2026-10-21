@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vigil</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --border: rgba(11,11,11,0.10);
+  --text: #0b0b0b; --text-2: #52514e; --muted: #7a7974;
+  --grid: #e1e0d9; --axis: #c3c2b7;
+  --series-1: #2a78d6; --series-2: #e34948;
+  --good: #0ca30c; --warning: #fab219; --critical: #d03b3b;
+  --good-text: #006300; --critical-text: #b22a2a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --border: rgba(255,255,255,0.10);
+    --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e88;
+    --grid: #2c2c2a; --axis: #383835;
+    --series-1: #3987e5; --series-2: #e66767;
+    --good-text: #0ca30c; --critical-text: #e66767;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --border: rgba(255,255,255,0.10);
+  --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e88;
+  --grid: #2c2c2a; --axis: #383835;
+  --series-1: #3987e5; --series-2: #e66767;
+  --good-text: #0ca30c; --critical-text: #e66767;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1200px; margin: 0 auto; padding: 20px 16px 48px; }
+header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+h1 { font-size: 20px; margin: 0; }
+h2 { font-size: 13px; font-weight: 600; color: var(--text-2); margin: 0 0 10px; }
+.sub { color: var(--muted); font-size: 13px; }
+.grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-bottom: 12px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; min-width: 0; }
+.tile .label { color: var(--text-2); font-size: 13px; }
+.tile .value { font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tile .note { color: var(--muted); font-size: 12px; }
+.alerts { margin-bottom: 12px; }
+.alert { display: flex; gap: 8px; align-items: baseline; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--critical); background: color-mix(in srgb, var(--critical) 10%, var(--surface)); margin-bottom: 6px; }
+.alert b { color: var(--critical-text); white-space: nowrap; }
+.ok-banner { color: var(--good-text); }
+.meter { margin: 10px 0 14px; }
+.meter .row { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.meter .path { font-weight: 600; overflow-wrap: anywhere; }
+.meter .nums { color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bar { height: 8px; border-radius: 4px; background: var(--grid); margin-top: 4px; overflow: hidden; }
+.bar > div { height: 100%; border-radius: 4px; }
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; height: 160px; overflow: visible; }
+.chart text { fill: var(--muted); font-size: 11px; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-size: 12px; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.12); display: none; z-index: 2; }
+.tip b { font-variant-numeric: tabular-nums; }
+.wide { grid-column: 1 / -1; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; color: var(--text-2); font-weight: 600; border-bottom: 1px solid var(--axis); padding: 6px 8px; white-space: nowrap; }
+td { border-bottom: 1px solid var(--grid); padding: 6px 8px; vertical-align: top; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.name { max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+.status-ok { color: var(--good-text); white-space: nowrap; }
+.status-err { color: var(--critical-text); white-space: nowrap; }
+.status-start { color: var(--text-2); white-space: nowrap; }
+.err { color: var(--critical-text); font-size: 12px; overflow-wrap: anywhere; }
+details.err summary { cursor: pointer; }
+details.err pre { margin: 6px 0 0; padding: 8px; max-height: 320px; overflow: auto; white-space: pre-wrap; color: var(--text); background: var(--page); border: 1px solid var(--border); border-radius: 6px; font-size: 12px; }
+.empty { color: var(--muted); padding: 12px 0; }
+.error-line { color: var(--critical-text); margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>vigil</h1>
+    <span class="sub" id="host"></span>
+    <span class="sub" id="updated"></span>
+  </header>
+  <div class="error-line" id="fetch-error" hidden></div>
+  <div class="alerts" id="alerts"></div>
+
+  <div class="grid" id="tiles"></div>
+
+  <div class="grid">
+    <section class="card"><h2>CPU, last 24 hours (%)</h2><div class="chart" id="cpu-chart"></div></section>
+    <section class="card"><h2>Memory, last 24 hours (%)</h2><div class="chart" id="mem-chart"></div></section>
+    <section class="card"><h2>Disks</h2><div id="disks"></div></section>
+  </div>
+
+  <div class="grid">
+    <section class="card wide"><h2>Data reported by applications per hour, last 24 hours</h2><div class="chart" id="hours-chart"></div></section>
+  </div>
+
+  <div class="grid">
+    <section class="card wide">
+      <h2>Applications</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>App</th><th>Kind</th><th>Last success</th><th class="num">24h runs</th><th class="num">24h failed</th><th class="num">24h data</th><th class="num">24h items</th><th class="num">All runs</th><th class="num">All data</th><th>Expected every</th></tr></thead>
+        <tbody id="stats"></tbody>
+      </table></div>
+    </section>
+    <section class="card wide">
+      <h2>Recent events</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Time</th><th>App / kind</th><th>Status</th><th>What</th><th class="num">Data</th><th class="num">Items</th><th class="num">Took</th></tr></thead>
+        <tbody id="events"></tbody>
+      </table></div>
+    </section>
+  </div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function fmtBytes(n) {
+  if (!n) return '0 B';
+  const u = ['B','kB','MB','GB','TB','PB']; let i = 0;
+  while (n >= 1000 && i < u.length - 1) { n /= 1000; i++; }
+  return (i ? n.toFixed(n < 10 ? 2 : 1) : n) + ' ' + u[i];
+}
+const fmtNum = n => (n ?? 0).toLocaleString();
+function fmtAge(t, now) {
+  const s = Math.max(0, (now - new Date(t)) / 1000);
+  if (s < 60) return Math.round(s) + 's ago';
+  if (s < 3600) return Math.round(s / 60) + 'm ago';
+  if (s < 172800) return Math.floor(s / 3600) + 'h ' + Math.round(s % 3600 / 60) + 'm ago';
+  return Math.round(s / 86400) + 'd ago';
+}
+// The most telling line of an error: the first, or the last for a Python
+// traceback, where the error is at the end.
+function summary(t) {
+  const lines = String(t).trim().split('\n');
+  let l = lines[0];
+  if (l.startsWith('Traceback (most recent call last)')) l = lines[lines.length - 1].trim();
+  return l.length > 120 ? l.slice(0, 120) + ' …' : l;
+}
+// Error detail: its summary line, and the full text (output, stack trace...)
+// one click away when there is more.
+function errDetail(t, k) {
+  if (!t) return '';
+  const first = summary(t);
+  if (first === String(t).trim()) return `<div class="err">${esc(first)}</div>`;
+  return `<details class="err" data-k="${esc(k)}"><summary>${esc(first)}</summary><pre>${esc(t)}</pre></details>`;
+}
+function fmtMs(ms) {
+  if (!ms) return '';
+  if (ms < 1000) return ms + ' ms';
+  const s = ms / 1000;
+  if (s < 60) return s.toFixed(1) + ' s';
+  if (s < 3600) return Math.floor(s / 60) + 'm ' + Math.round(s % 60) + 's';
+  return Math.floor(s / 3600) + 'h ' + Math.round(s % 3600 / 60) + 'm';
+}
+const fmtTime = t => new Date(t).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit'});
+const fmtHour = t => new Date(t).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+
+// Severity for a percentage against its alert threshold: the fill colour,
+// plus an icon and word so it never relies on colour alone.
+function severity(pct, warn) {
+  if (pct >= warn) return {color: 'var(--critical)', label: '▲ over limit'};
+  if (pct >= warn - 10) return {color: 'var(--warning)', label: '● near limit'};
+  return {color: 'var(--series-1)', label: ''};
+}
+
+let W = 600; const H = 160, PAD = {l: 34, r: 8, t: 8, b: 22};
+
+// Line chart of one series (0-100%) with a dashed threshold line and a
+// crosshair tooltip.
+function lineChart(el, points, key, threshold, label) {
+  W = Math.max(280, el.clientWidth || 600);
+  const pts = points.filter(p => p[key] >= 0);
+  if (pts.length < 2) { el.innerHTML = '<div class="empty">Not available on this host yet.</div>'; return; }
+  const t0 = +new Date(pts[0].t), t1 = +new Date(pts[pts.length - 1].t);
+  const x = t => PAD.l + (W - PAD.l - PAD.r) * ((+new Date(t)) - t0) / Math.max(1, t1 - t0);
+  const y = v => PAD.t + (H - PAD.t - PAD.b) * (1 - v / 100);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}">`;
+  for (const v of [0, 50, 100]) {
+    svg += `<line x1="${PAD.l}" x2="${W - PAD.r}" y1="${y(v)}" y2="${y(v)}" stroke="${v ? 'var(--grid)' : 'var(--axis)'}" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+    svg += `<text x="${PAD.l - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
+  }
+  svg += `<line x1="${PAD.l}" x2="${W - PAD.r}" y1="${y(threshold)}" y2="${y(threshold)}" stroke="var(--critical)" stroke-dasharray="4 4" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+  for (const i of [0, Math.floor(pts.length / 2), pts.length - 1]) {
+    const anchor = i === 0 ? 'start' : i === pts.length - 1 ? 'end' : 'middle';
+    svg += `<text x="${x(pts[i].t)}" y="${H - 6}" text-anchor="${anchor}">${fmtHour(pts[i].t)}</text>`;
+  }
+  const d = pts.map((p, i) => (i ? 'L' : 'M') + x(p.t).toFixed(1) + ',' + y(p[key]).toFixed(1)).join('');
+  svg += `<path d="${d}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+  svg += `<line class="xh" y1="${PAD.t}" y2="${H - PAD.b}" stroke="var(--axis)" stroke-width="1" vector-effect="non-scaling-stroke" visibility="hidden"/>`;
+  svg += `<rect x="${PAD.l}" y="0" width="${W - PAD.l - PAD.r}" height="${H}" fill="transparent"/></svg><div class="tip"></div>`;
+  el.innerHTML = svg;
+  const svgEl = el.querySelector('svg'), tip = el.querySelector('.tip'), xh = el.querySelector('.xh');
+  svgEl.addEventListener('pointermove', ev => {
+    const r = svgEl.getBoundingClientRect();
+    const vx = (ev.clientX - r.left) / r.width * W;
+    let best = pts[0];
+    for (const p of pts) if (Math.abs(x(p.t) - vx) < Math.abs(x(best.t) - vx)) best = p;
+    xh.setAttribute('x1', x(best.t)); xh.setAttribute('x2', x(best.t)); xh.setAttribute('visibility', 'visible');
+    tip.innerHTML = `${fmtTime(best.t)} · <b>${best[key].toFixed(1)}%</b>`;
+    tip.style.display = 'block';
+    const px = x(best.t) / W * r.width;
+    tip.style.left = Math.min(Math.max(0, px - tip.offsetWidth / 2), r.width - tip.offsetWidth) + 'px';
+    tip.style.top = '-6px';
+  });
+  svgEl.addEventListener('pointerleave', () => { tip.style.display = 'none'; xh.setAttribute('visibility', 'hidden'); });
+}
+
+// Bar chart of bytes per hour; hover shows bytes, runs and failures.
+function hoursChart(el, hours) {
+  W = Math.max(280, el.clientWidth || 600);
+  if (!hours.some(h => h.count)) { el.innerHTML = '<div class="empty">No events in the last 24 hours.</div>'; return; }
+  const maxB = Math.max(1, ...hours.map(h => h.bytes));
+  const slot = (W - PAD.l - PAD.r) / hours.length, bw = Math.max(2, slot - 2);
+  const y = v => PAD.t + (H - PAD.t - PAD.b) * (1 - v / maxB);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Data per hour">`;
+  svg += `<line x1="${PAD.l}" x2="${W - PAD.r}" y1="${y(maxB)}" y2="${y(maxB)}" stroke="var(--grid)" vector-effect="non-scaling-stroke"/>`;
+  svg += `<text x="${PAD.l - 6}" y="${y(maxB) + 4}" text-anchor="end">${esc(fmtBytes(maxB).replace(' ', ''))}</text>`;
+  hours.forEach((h, i) => {
+    const x0 = PAD.l + i * slot + 1, top = y(h.bytes), ht = H - PAD.b - top;
+    if (h.bytes > 0) {
+      const r = Math.min(4, bw / 2, ht);
+      svg += `<path d="M${x0},${H - PAD.b}V${top + r}Q${x0},${top} ${x0 + r},${top}H${x0 + bw - r}Q${x0 + bw},${top} ${x0 + bw},${top + r}V${H - PAD.b}Z" fill="var(--series-1)"/>`;
+    } else if (h.count) {
+      svg += `<rect x="${x0}" y="${H - PAD.b - 2}" width="${bw}" height="2" fill="var(--series-1)"/>`;
+    }
+    if (h.failures) svg += `<circle cx="${x0 + bw / 2}" cy="${Math.min(top, H - PAD.b) - 7}" r="4" fill="var(--critical)" stroke="var(--surface)" stroke-width="2"/>`;
+    if (i % 6 === 0) svg += `<text x="${x0}" y="${H - 6}">${fmtHour(h.t)}</text>`;
+    svg += `<rect class="hit" data-i="${i}" x="${PAD.l + i * slot}" y="0" width="${slot}" height="${H}" fill="transparent"/>`;
+  });
+  svg += `<line x1="${PAD.l}" x2="${W - PAD.r}" y1="${H - PAD.b}" y2="${H - PAD.b}" stroke="var(--axis)" vector-effect="non-scaling-stroke"/></svg><div class="tip"></div>`;
+  el.innerHTML = svg;
+  const svgEl = el.querySelector('svg'), tip = el.querySelector('.tip');
+  svgEl.querySelectorAll('.hit').forEach(r => r.addEventListener('pointerenter', () => {
+    const h = hours[+r.dataset.i], b = svgEl.getBoundingClientRect();
+    tip.innerHTML = `${fmtHour(h.t)} · <b>${fmtBytes(h.bytes)}</b> · ${h.count} runs` + (h.failures ? ` · <span class="status-err">✕ ${h.failures} failed</span>` : '');
+    tip.style.display = 'block';
+    const px = (PAD.l + (+r.dataset.i + 0.5) * slot) / W * b.width;
+    tip.style.left = Math.min(Math.max(0, px - tip.offsetWidth / 2), b.width - tip.offsetWidth) + 'px';
+    tip.style.top = '-6px';
+  }));
+  svgEl.addEventListener('pointerleave', () => tip.style.display = 'none');
+}
+
+let lastStatus = null;
+let resizeTimer;
+addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => lastStatus && render(lastStatus), 150); });
+
+function render(s) {
+  lastStatus = s;
+  const now = new Date(s.now);
+  $('host').textContent = s.host + ' · up ' + fmtAge(s.started, now).replace(' ago', '');
+  $('updated').textContent = 'updated ' + now.toLocaleTimeString();
+
+  $('alerts').innerHTML = s.alerts.length
+    ? s.alerts.map(a => `<div class="alert"><b>▲ ${esc(a.key)}</b><span>${esc(a.message)} <span class="sub">· since ${fmtAge(a.since, now)}</span></span></div>`).join('')
+    : '<div class="ok-banner">✓ No alerts</div>';
+
+  const last = s.samples[s.samples.length - 1] || {};
+  const tile = (label, value, note) => `<div class="card tile"><div class="label">${label}</div><div class="value">${value}</div><div class="note">${note}</div></div>`;
+  const pct = (v, warn) => v >= 0 ? `${v.toFixed(0)}%` : '–';
+  const runs = s.stats.reduce((a, x) => a + x.count_24h, 0), fails = s.stats.reduce((a, x) => a + x.failures_24h, 0);
+  $('tiles').innerHTML =
+    tile('CPU', pct(last.cpu), last.cpu >= 0 ? `alert above ${s.thresholds.cpu}% sustained` : 'not available on this host') +
+    tile('Memory', pct(last.mem), last.mem >= 0 ? `alert above ${s.thresholds.mem}% sustained` : 'not available on this host') +
+    tile('Load (1 min)', last.load1 >= 0 ? last.load1.toFixed(2) : '–', 'sampled every ' + s.interval) +
+    tile('Events, 24h', fmtNum(runs), fails ? `<span class="status-err">✕ ${fails} failed</span>` : '<span class="status-ok">✓ none failed</span>');
+
+  lineChart($('cpu-chart'), s.samples, 'cpu', s.thresholds.cpu, 'CPU usage over the last 24 hours');
+  lineChart($('mem-chart'), s.samples, 'mem', s.thresholds.mem, 'Memory usage over the last 24 hours');
+  hoursChart($('hours-chart'), s.hours);
+
+  $('disks').innerHTML = s.disks.map(d => {
+    if (d.error) return `<div class="meter"><div class="row"><span class="path">${esc(d.path)}</span></div><div class="err">${esc(d.error)}</div></div>`;
+    const sev = severity(d.pct, s.thresholds.disk);
+    return `<div class="meter"><div class="row"><span class="path">${esc(d.path)}</span><span class="nums">${d.pct.toFixed(0)}% · ${fmtBytes(d.free)} free of ${fmtBytes(d.total)}</span></div>
+      <div class="bar" role="meter" aria-valuenow="${d.pct.toFixed(0)}" aria-valuemin="0" aria-valuemax="100" aria-label="${esc(d.path)}"><div style="width:${Math.min(100, d.pct)}%;background:${sev.color}"></div></div>
+      ${sev.label ? `<div class="sub">${sev.label} (${s.thresholds.disk}%)</div>` : ''}</div>`;
+  }).join('') || '<div class="empty">No disks configured.</div>';
+
+  $('stats').innerHTML = s.stats.map(x => `<tr>
+    <td>${esc(x.app)}</td><td>${esc(x.kind)}</td>
+    <td>${x.last_success ? fmtAge(x.last_success, now) : '<span class="sub">never</span>'}${x.last_error ? `<div class="err" title="${esc(x.last_error)}">last error ${fmtAge(x.last_failure, now)}: ${esc(summary(x.last_error))}</div>` : ''}</td>
+    <td class="num">${fmtNum(x.count_24h)}</td>
+    <td class="num">${x.failures_24h ? `<span class="status-err">✕ ${fmtNum(x.failures_24h)}</span>` : '0'}</td>
+    <td class="num">${fmtBytes(x.bytes_24h)}</td><td class="num">${fmtNum(x.items_24h)}</td>
+    <td class="num">${fmtNum(x.count)}</td><td class="num">${fmtBytes(x.bytes)}</td>
+    <td>${esc(x.expect || '')}</td></tr>`).join('') || '<tr><td colspan="10" class="empty">No application has reported yet.</td></tr>';
+
+  const open = new Set([...document.querySelectorAll('details[open]')].map(d => d.dataset.k));
+  // Results by run, to show on each run's "started" row. A result is always
+  // newer than its start, so it is in this list whenever the start is.
+  const results = new Map(s.events.filter(e => e.run_id && e.status !== 'started').map(e => [e.app + '/' + e.kind + '/' + e.run_id, e]));
+  const startCell = e => {
+    const r = e.run_id && results.get(e.app + '/' + e.kind + '/' + e.run_id);
+    let note = '';
+    if (r) note = `${r.status === 'failed' ? '<span class="status-err">✕ failed</span>' : '<span class="status-ok">✓ ok</span>'} ${fmtMs(new Date(r.time) - new Date(e.time)) || '0 ms'} later`;
+    else if (e.run_id) note = `no result yet · ${fmtMs(now - new Date(e.time)) || '0 ms'}`;
+    return `<span class="status-start">▶ started</span>${note ? `<div class="sub">${note}</div>` : ''}`;
+  };
+  $('events').innerHTML = s.events.map(e => `<tr>
+    <td style="white-space:nowrap">${fmtTime(e.time)}</td><td>${esc(e.app)} / ${esc(e.kind)}</td>
+    <td>${e.status === 'failed' ? `<span class="status-err">✕ failed</span>${errDetail(e.error, e.time + e.app + e.kind)}`
+      : e.status === 'started' ? startCell(e) : '<span class="status-ok">✓ ok</span>'}</td>
+    <td class="name" title="${esc(e.name)}">${esc(e.name)}</td>
+    <td class="num">${e.bytes ? fmtBytes(e.bytes) : ''}</td><td class="num">${e.items ? fmtNum(e.items) : ''}</td><td class="num">${fmtMs(e.duration_ms)}</td></tr>`).join('')
+    || '<tr><td colspan="7" class="empty">No events in the last 24 hours.</td></tr>';
+  document.querySelectorAll('details[data-k]').forEach(d => { if (open.has(d.dataset.k)) d.open = true; });
+}
+
+async function refresh() {
+  try {
+    const r = await fetch('api/status', {cache: 'no-store'});
+    if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
+    render(await r.json());
+    $('fetch-error').hidden = true;
+  } catch (e) {
+    $('fetch-error').textContent = 'Could not reach vigil: ' + e.message;
+    $('fetch-error').hidden = false;
+  }
+}
+refresh();
+setInterval(refresh, 15000);
+</script>
+</body>
+</html>

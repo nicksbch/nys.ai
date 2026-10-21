@@ -1,0 +1,22 @@
+mcp-hub: one MCP endpoint for every service on this server.
+
+It joins the tools of the MCP servers in servers.json into one catalogue,
+named <server>__<tool> (vigil__list_jobs), and forwards each call to the
+server that owns it. Every call is published to relay as mcp-hub.call.
+
+Endpoints (all but / and /healthz need Authorization: Bearer $MCP_HUB_TOKEN):
+  /mcp              MCP (Streamable HTTP), every tool
+  /mcp/<profile>    MCP, only that profile's tools
+  GET /v1/servers   each upstream: state (up/down), tool count, last error
+  GET /v1/tools     each tool: name, server, description, profiles
+  GET /healthz      ok
+
+Connect Claude Code:
+  claude mcp add --transport http hub http://<host>:8094/mcp/<profile> \
+    --header "Authorization: Bearer $MCP_HUB_TOKEN"
+
+Commands:
+  mcp-hub serve [-listen 127.0.0.1:8094] [-config /etc/mcp-hub/servers.json]
+  mcp-hub check [-config /etc/mcp-hub/servers.json]
+      validate the config, connect to each upstream, print one JSON line
+      per server; exit 0 all up, 1 some down, 2 config invalid

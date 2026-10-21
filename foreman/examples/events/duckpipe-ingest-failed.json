@@ -1,0 +1,15 @@
+{
+  "id": 2817,
+  "time": "2026-10-21T02:10:44.518Z",
+  "topic": "duckpipe.ingest",
+  "type": "failed",
+  "run_id": "5be0c1d29a7f4e31",
+  "data": {
+    "name": "orders: s3://home/exports/orders-2026-10-20.csv -> lake.sales.orders",
+    "pipe": "orders",
+    "table": "lake.sales.orders",
+    "files": 1,
+    "bytes": 4183290,
+    "error": "Conversion Error: CSV Error on Line: 1843\nOriginal Line: 10442,2026-10-20,ACME-7,N/A,19.99\nError when converting column \"quantity\". Could not convert string \"N/A\" to 'BIGINT'\n\nColumn quantity is being converted as type BIGINT\nThis type was either manually set or derived from an existing table."
+  }
+}

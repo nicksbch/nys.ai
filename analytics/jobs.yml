@@ -1,0 +1,8 @@
+jobs:
+  # Rebuild after duckpipe loads new price paid files.
+  - name: price_paid
+    select: source:uk.price_paid+
+    on:
+      - topic: duckpipe.ingest
+        type: ok
+        data: {table: lake.uk.price_paid}

@@ -1,0 +1,29 @@
+# Local deploy settings (hosts, ports, secrets); deploy.env.example is the template
+deploy.env
+
+# Binaries from a local `go build` in each app directory
+/duckpipe/duckpipe
+/foreman/foreman
+/garage-ui/garage-ui
+/home/home
+/lake-ui/lake-ui
+/lakeshape/lakeshape
+/mcp-hub/mcp-hub
+/relay/relay
+/url-to-bucket/url-to-bucket
+/vigil/vigil
+
+# Go build and test output
+*.test
+*.out
+coverage.*
+
+# Local data
+*.duckdb
+*.duckdb.wal
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+*.swp

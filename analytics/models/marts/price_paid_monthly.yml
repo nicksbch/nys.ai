@@ -1,0 +1,7 @@
+models:
+  - name: price_paid_monthly
+    columns:
+      - name: month
+        tests: [not_null]
+      - name: sales
+        tests: [not_null]

@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>relay</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --border: rgba(11,11,11,0.10);
+  --text: #0b0b0b; --text-2: #52514e; --muted: #7a7974;
+  --grid: #e1e0d9; --axis: #c3c2b7; --accent: #2a78d6;
+  --good: #0ca30c; --warning: #fab219; --critical: #d03b3b;
+  --good-text: #006300; --warning-text: #8a5a00; --critical-text: #b22a2a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --border: rgba(255,255,255,0.10);
+    --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e88;
+    --grid: #2c2c2a; --axis: #383835; --accent: #3987e5;
+    --good-text: #0ca30c; --warning-text: #fab219; --critical-text: #e66767;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --border: rgba(255,255,255,0.10);
+  --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e88;
+  --grid: #2c2c2a; --axis: #383835; --accent: #3987e5;
+  --good-text: #0ca30c; --warning-text: #fab219; --critical-text: #e66767;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1200px; margin: 0 auto; padding: 20px 16px 48px; }
+header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+h1 { font-size: 20px; margin: 0; }
+h2 { font-size: 13px; font-weight: 600; color: var(--text-2); margin: 0 0 10px; }
+.sub { color: var(--muted); font-size: 13px; }
+.grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); margin-bottom: 12px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; min-width: 0; }
+.wide { grid-column: 1 / -1; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; color: var(--text-2); font-weight: 600; border-bottom: 1px solid var(--axis); padding: 6px 8px; white-space: nowrap; }
+td { border-bottom: 1px solid var(--grid); padding: 6px 8px; vertical-align: top; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nowrap { white-space: nowrap; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.status-ok { color: var(--good-text); }
+.status-failed { color: var(--critical-text); }
+.status-other { color: var(--text-2); }
+.backlog { color: var(--warning-text); font-weight: 600; }
+.empty { color: var(--muted); padding: 12px 0; }
+.error-line { color: var(--critical-text); margin-bottom: 12px; }
+.live { font-size: 13px; color: var(--muted); }
+.live::before { content: "●"; margin-right: 4px; color: var(--muted); }
+.live.on::before { color: var(--good); }
+.filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+input { font: inherit; font-size: 13px; color: var(--text); background: var(--page); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; min-width: 0; }
+.filters input { flex: 1 1 140px; }
+button { font: inherit; font-size: 13px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+a.link, button.link { color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: none; font: inherit; }
+a.link:hover, button.link:hover { text-decoration: underline; }
+tr.ev { cursor: pointer; }
+tr.ev:hover td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+tr.ev.new td { animation: flash 1.5s ease-out; }
+@keyframes flash { from { background: color-mix(in srgb, var(--accent) 18%, transparent); } }
+.preview { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+pre.data { margin: 0; padding: 8px; max-height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--page); border: 1px solid var(--border); border-radius: 6px; font-size: 12px; }
+#login { max-width: 420px; margin: 80px auto; }
+#login form { display: flex; gap: 8px; margin-top: 10px; }
+#login input { flex: 1; }
+</style>
+</head>
+<body>
+<section class="card" id="login" hidden>
+  <h2>relay token</h2>
+  <div class="sub">This dashboard reads the relay API with your token. It is kept in this browser only. On the server, it is in <span class="mono">/etc/relay-client.env</span>.</div>
+  <form id="login-form"><input id="token" type="password" autocomplete="current-password" placeholder="RELAY_TOKEN" required><button>Open</button></form>
+  <div class="error-line" id="login-error" hidden></div>
+</section>
+
+<main id="app" hidden>
+  <header>
+    <h1>relay</h1>
+    <span class="sub" id="latest"></span>
+    <span class="live" id="live">connecting</span>
+    <span style="flex:1"></span>
+    <button class="link" id="logout">Forget token</button>
+  </header>
+  <div class="error-line" id="fetch-error" hidden></div>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Topics</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Topic</th><th>Types</th><th class="num">Events</th><th>Last event</th></tr></thead>
+        <tbody id="topics"></tbody>
+      </table></div>
+    </section>
+    <section class="card">
+      <h2>Consumers</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Name</th><th>Filter</th><th class="num">Cursor</th><th class="num">Backlog</th></tr></thead>
+        <tbody id="consumers"></tbody>
+      </table></div>
+    </section>
+  </div>
+
+  <div class="grid">
+    <section class="card wide">
+      <h2>Events</h2>
+      <div class="filters">
+        <input id="f-topic" placeholder="topic, e.g. url-to-bucket.*" spellcheck="false">
+        <input id="f-type" placeholder="type, e.g. ok,failed" spellcheck="false">
+        <input id="f-run" placeholder="run_id" spellcheck="false">
+        <button id="f-clear">Clear</button>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th class="num">ID</th><th>Time</th><th>Topic</th><th>Type</th><th>Run</th><th>Data</th></tr></thead>
+        <tbody id="events"></tbody>
+      </table></div>
+    </section>
+  </div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const SHOWN = 200;        // events kept on the page
+const TOKEN_KEY = 'relay-token';
+
+function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
+function setToken(t) { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch {} }
+let token = getToken();
+
+class Unauthorized extends Error {}
+
+async function api(path, signal) {
+  const r = await fetch(path, {headers: {Authorization: 'Bearer ' + token}, cache: 'no-store', signal});
+  if (r.status === 401) throw new Unauthorized('unauthorized');
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.error || r.status + ' ' + r.statusText);
+  return body;
+}
+
+// el builds an element; children are nodes or strings (always set as text).
+function el(tag, attrs, ...children) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === 'onclick') e.onclick = v; else if (v != null) e.setAttribute(k, v);
+  }
+  for (const c of children) if (c != null) e.append(c);
+  return e;
+}
+function fill(tbody, rows, cols, emptyText) {
+  tbody.replaceChildren(...(rows.length ? rows : [el('tr', {}, el('td', {colspan: cols, class: 'empty'}, emptyText))]));
+}
+
+function fmtAge(t) {
+  const s = Math.max(0, (Date.now() - new Date(t)) / 1000);
+  if (s < 60) return Math.round(s) + 's ago';
+  if (s < 3600) return Math.round(s / 60) + 'm ago';
+  if (s < 172800) return Math.floor(s / 3600) + 'h ' + Math.round(s % 3600 / 60) + 'm ago';
+  return Math.round(s / 86400) + 'd ago';
+}
+function fmtTime(t) {
+  const d = new Date(t);
+  return d.toLocaleDateString(undefined, {month: 'short', day: 'numeric'}) + ' ' +
+    d.toLocaleTimeString(undefined, {hour12: false});
+}
+const typeClass = t => t === 'ok' ? 'status-ok' : t === 'failed' ? 'status-failed' : 'status-other';
+
+function showError(e) {
+  if (e instanceof Unauthorized) return showLogin('That token was refused.');
+  if (e.name === 'AbortError') return;
+  $('fetch-error').textContent = 'Could not reach relay: ' + e.message;
+  $('fetch-error').hidden = false;
+}
+
+// --- Filters ------------------------------------------------------------------
+
+const filters = {topic: $('f-topic'), type: $('f-type'), run_id: $('f-run')};
+
+function setFilter(name, value) {
+  filters[name].value = value;
+  restartEvents();
+}
+function filterQuery() {
+  const q = new URLSearchParams();
+  for (const [k, input] of Object.entries(filters)) if (input.value.trim()) q.set(k, input.value.trim());
+  return q;
+}
+
+// --- Topics and consumers -----------------------------------------------------
+
+async function refreshSummary() {
+  const [topics, consumers] = await Promise.all([api('v1/topics'), api('v1/consumers')]);
+  fill($('topics'), topics.map(t => el('tr', {},
+    el('td', {}, el('button', {class: 'link mono', onclick: () => setFilter('topic', t.topic)}, t.topic)),
+    el('td', {}, ...t.types.flatMap((ty, i) => [i ? ', ' : null,
+      el('button', {class: 'link ' + typeClass(ty), onclick: () => { filters.topic.value = t.topic; setFilter('type', ty); }}, ty)])),
+    el('td', {class: 'num'}, t.count.toLocaleString()),
+    el('td', {class: 'nowrap', title: fmtTime(t.last_time)}, fmtAge(t.last_time)),
+  )), 4, 'No events yet.');
+  fill($('consumers'), consumers.map(c => el('tr', {},
+    el('td', {class: 'mono'}, c.name),
+    el('td', {class: 'mono'}, c.topic + (c.type ? ' · ' + c.type : '')),
+    el('td', {class: 'num'}, String(c.cursor)),
+    el('td', {class: 'num' + (c.backlog ? ' backlog' : '')}, c.backlog.toLocaleString()),
+  )), 4, 'No consumers.');
+}
+
+// --- Events -------------------------------------------------------------------
+
+let ctrl = null;   // aborts the running event stream when the filters change
+let lastID = 0;
+
+function eventRow(e, isNew) {
+  const data = e.data ? JSON.stringify(e.data) : '';
+  const row = el('tr', {class: 'ev' + (isNew ? ' new' : '')},
+    el('td', {class: 'num mono'}, String(e.id)),
+    el('td', {class: 'nowrap', title: e.time}, fmtTime(e.time)),
+    el('td', {class: 'mono'}, e.topic),
+    el('td', {class: typeClass(e.type)}, e.type),
+    el('td', {class: 'mono'}, e.run_id
+      ? el('button', {class: 'link', onclick: ev => { ev.stopPropagation(); setFilter('run_id', e.run_id); }}, e.run_id.slice(0, 12))
+      : ''),
+    el('td', {class: 'preview mono', title: data}, data),
+  );
+  row.onclick = () => {
+    const open = row.nextElementSibling;
+    if (open && open.classList.contains('detail')) return open.remove();
+    row.after(el('tr', {class: 'detail'}, el('td', {colspan: 6}, el('pre', {class: 'data'}, JSON.stringify(e, null, 2)))));
+  };
+  return row;
+}
+
+function prepend(events, isNew) {
+  const tbody = $('events');
+  if (tbody.querySelector('.empty')) tbody.replaceChildren();
+  for (const e of events) tbody.prepend(eventRow(e, isNew));
+  const rows = tbody.querySelectorAll('tr.ev');
+  for (let i = SHOWN; i < rows.length; i++) {
+    const detail = rows[i].nextElementSibling;
+    if (detail && detail.classList.contains('detail')) detail.remove();
+    rows[i].remove();
+  }
+}
+
+function setLive(on, text) {
+  $('live').classList.toggle('on', on);
+  $('live').textContent = text;
+}
+
+// streamEvents loads the newest events matching the filters, then long-polls
+// for new ones until the filters change.
+async function streamEvents(signal) {
+  const q = filterQuery();
+  q.set('last', SHOWN);
+  const first = await api('v1/events?' + q, signal);
+  fill($('events'), [], 6, 'No matching events.');
+  prepend(first.events, false);
+  let after = first.next;
+  setLatest(after);
+  q.delete('last');
+  q.set('wait', '30s');
+  q.set('limit', '100');
+  for (;;) {
+    q.set('after', after);
+    setLive(true, 'live');
+    let resp;
+    try {
+      resp = await api('v1/events?' + q, signal);
+    } catch (e) {
+      if (signal.aborted || e instanceof Unauthorized) throw e;
+      setLive(false, 'reconnecting');
+      showError(e);
+      await new Promise(r => setTimeout(r, 5000));
+      continue;
+    }
+    $('fetch-error').hidden = true;
+    prepend(resp.events, true);
+    after = resp.next;
+    setLatest(after);
+  }
+}
+
+function setLatest(id) {
+  if (id <= lastID) return;
+  lastID = id;
+  $('latest').textContent = 'latest event #' + id;
+}
+
+function restartEvents() {
+  if (ctrl) ctrl.abort();
+  ctrl = new AbortController();
+  streamEvents(ctrl.signal).catch(e => { if (!ctrl.signal.aborted) { setLive(false, 'stopped'); showError(e); } });
+}
+
+let debounce;
+for (const input of Object.values(filters)) {
+  input.addEventListener('input', () => { clearTimeout(debounce); debounce = setTimeout(restartEvents, 400); });
+}
+$('f-clear').onclick = () => { for (const input of Object.values(filters)) input.value = ''; restartEvents(); };
+
+// --- Start --------------------------------------------------------------------
+
+let summaryTimer;
+
+function showLogin(msg) {
+  if (ctrl) ctrl.abort();
+  clearInterval(summaryTimer);
+  $('app').hidden = true;
+  $('login').hidden = false;
+  $('login-error').textContent = msg || '';
+  $('login-error').hidden = !msg;
+  $('token').focus();
+}
+
+async function start() {
+  try {
+    await refreshSummary();
+  } catch (e) {
+    if (e instanceof Unauthorized) return showLogin(token ? 'That token was refused.' : '');
+    showError(e);
+  }
+  $('login').hidden = true;
+  $('app').hidden = false;
+  restartEvents();
+  summaryTimer = setInterval(() => refreshSummary().then(() => { $('fetch-error').hidden = true; }, showError), 15000);
+}
+
+$('login-form').onsubmit = ev => {
+  ev.preventDefault();
+  token = $('token').value.trim();
+  setToken(token);
+  $('token').value = '';
+  start();
+};
+$('logout').onclick = () => { token = ''; setToken(''); showLogin(); };
+
+start();
+</script>
+</body>
+</html>

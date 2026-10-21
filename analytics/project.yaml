@@ -1,0 +1,8 @@
+name: analytics
+lake:
+  catalog: ducklake:postgres:dbname=ducklake   # host, user, password from PG* env vars
+  data_path: s3://lake/
+schema: analytics
+models:
+  staging: {schema: staging, materialized: table, tags: [staging]}
+  marts: {schema: marts, materialized: table, tags: [marts]}

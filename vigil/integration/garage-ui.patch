@@ -1,0 +1,67 @@
+--- a/garage-ui/main.go
++++ b/garage-ui/main.go
+@@ -47,6 +47,7 @@
+ 	"github.com/aws/aws-sdk-go-v2/service/s3"
+ 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+ 	"github.com/aws/smithy-go"
++	vigil "vigil/client"
+ )
+ 
+ //go:embed index.html
+@@ -63,6 +64,7 @@
+ 	s3       *s3.Client
+ 	uploader *manager.Uploader
+ 	endpoint string
++	mon      *vigil.Client
+ }
+ 
+ func envOr(key, def string) string {
+@@ -109,6 +111,7 @@
+ 		s3:       client,
+ 		uploader: manager.NewUploader(client, func(u *manager.Uploader) { u.PartSize = chunk }),
+ 		endpoint: *endpoint,
++		mon:      vigil.FromEnv("garage-ui"),
+ 	}
+ 
+ 	srv := &http.Server{
+@@ -389,7 +392,13 @@
+ 		code = http.StatusPartialContent
+ 	}
+ 	w.WriteHeader(code)
+-	io.Copy(w, out.Body)
++	if in.Range == nil {
++		op := s.mon.Track("download", q.Get("bucket")+"/"+key)
++		_, err := io.Copy(w, op.Reader(out.Body))
++		op.Done(err)
++	} else {
++		io.Copy(w, out.Body)
++	}
+ 	return nil
+ }
+ 
+@@ -408,12 +417,14 @@
+ 		return fail(http.StatusBadRequest, "invalid key %q", key)
+ 	}
+ 	ct := cmpOr(r.Header.Get("Content-Type"), mime.TypeByExtension(path.Ext(key)))
++	op := s.mon.Track("ingest", q.Get("bucket")+"/"+key)
+ 	_, err := s.uploader.Upload(r.Context(), &s3.PutObjectInput{
+ 		Bucket:      aws.String(q.Get("bucket")),
+ 		Key:         &key,
+-		Body:        r.Body,
++		Body:        op.Reader(r.Body),
+ 		ContentType: aws.String(cmpOr(ct, "application/octet-stream")),
+ 	})
++	op.Done(err)
+ 	if err != nil {
+ 		return err
+ 	}
+--- a/garage-ui/install.sh
++++ b/garage-ui/install.sh
+@@ -90,6 +90,7 @@
+ 
+ [Service]
+ EnvironmentFile=$ENV_FILE
++EnvironmentFile=-/etc/vigil-client.env
+ ExecStart=$BIN -listen $LISTEN
+ DynamicUser=yes
+ ProtectSystem=strict

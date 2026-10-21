@@ -1,0 +1,12 @@
+models:
+  - name: orders
+    description: One row per order, with its customer.
+    columns:
+      - name: order_id
+        tests: [not_null, unique]
+      - name: status
+        tests:
+          - accepted_values: {values: [placed, shipped, returned]}
+      - name: customer_id
+        tests:
+          - relationships: {to: "ref('stg_customers')", field: customer_id, severity: warn}

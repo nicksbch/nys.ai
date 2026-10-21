@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lake UI</title>
+<style>
+:root {
+  --bg: #f5f6f8; --panel: #fff; --text: #1d2330; --muted: #6b7280; --line: #e3e6eb;
+  --accent: #1c6fd6; --accent-text: #fff; --hover: #f0f2f5; --sel: #e7f0fc; --danger: #c92a2a;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #131519; --panel: #1b1e23; --text: #e6e8eb; --muted: #8b929c; --line: #2a2e35;
+    --accent: #5aa2f5; --accent-text: #131519; --hover: #23272e; --sel: #182a40; --danger: #ff6b6b;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg); color: var(--text);
+  display: grid; grid-template-columns: 260px 1fr; grid-template-rows: auto 1fr;
+}
+header {
+  grid-column: 1 / -1; display: flex; align-items: baseline; gap: 12px;
+  padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel);
+}
+header h1 { margin: 0; font-size: 16px; }
+header h1 span { color: var(--accent); }
+header small { color: var(--muted); font-family: var(--mono); }
+aside { border-right: 1px solid var(--line); background: var(--panel); overflow: auto; padding: 8px; min-height: 0; }
+.side-bar { display: flex; gap: 6px; margin-bottom: 6px; }
+.side-bar input { flex: 1; min-width: 0; }
+aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 12px 8px 4px; }
+aside details summary {
+  display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 6px;
+  cursor: pointer; list-style: none; font-family: var(--mono); font-size: 13px;
+}
+aside details summary::-webkit-details-marker { display: none; }
+aside details summary::before { content: "▸"; color: var(--muted); font-size: 10px; width: 10px; }
+aside details[open] summary::before { content: "▾"; }
+aside details summary:hover { background: var(--hover); }
+aside details summary b { flex: 1; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+aside details summary button { visibility: hidden; padding: 0 6px; font-size: 12px; }
+aside details summary:hover button, aside details summary button:focus-visible { visibility: visible; }
+aside ul { list-style: none; margin: 0 0 4px; padding: 0 8px 0 26px; font-family: var(--mono); font-size: 12px; }
+aside li { display: flex; gap: 8px; padding: 1px 0; }
+aside li span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+aside li i { font-style: normal; color: var(--muted); white-space: nowrap; }
+aside .note { padding: 8px; color: var(--muted); font-size: 12px; }
+aside .note.err { color: var(--danger); white-space: pre-wrap; overflow-wrap: anywhere; }
+main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+#sql {
+  display: block; width: 100%; height: 30vh; min-height: 80px; resize: vertical; margin: 0;
+  padding: 12px 16px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0;
+  background: var(--panel); color: var(--text); font: 13px/1.5 var(--mono); tab-size: 2;
+}
+#sql:focus { outline: none; box-shadow: inset 0 -2px 0 var(--accent); }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
+.bar kbd { font-family: var(--mono); font-size: 11px; opacity: .75; margin-left: 4px; }
+#status { flex: 1 1 200px; color: var(--muted); font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
+button, input {
+  font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 6px; padding: 5px 10px;
+}
+button { cursor: pointer; }
+button:hover:not(:disabled) { background: var(--hover); }
+button:disabled { opacity: .45; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+input:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+#result { flex: 1; overflow: auto; min-height: 0; }
+table { border-collapse: collapse; font-size: 13px; }
+th, td { padding: 5px 10px; text-align: left; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); white-space: nowrap; }
+td { max-width: 480px; overflow: hidden; text-overflow: ellipsis; font-family: var(--mono); font-size: 12px; }
+th { position: sticky; top: 0; background: var(--bg); font-weight: 600; z-index: 1; }
+th small { display: block; font-weight: 400; color: var(--muted); font-family: var(--mono); font-size: 11px; }
+th.rn, td.rn { color: var(--muted); text-align: right; font-size: 11px; position: sticky; left: 0; background: var(--bg); }
+th.rn { z-index: 2; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+td .null { color: var(--muted); font-style: italic; }
+tbody tr:hover td { background: var(--hover); }
+#ac {
+  position: fixed; z-index: 10; min-width: 220px; max-width: 420px; max-height: 220px; overflow: auto;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .18); font: 12px/1.5 var(--mono);
+}
+#ac[hidden] { display: none; }
+#ac div { display: flex; gap: 12px; padding: 3px 10px; cursor: pointer; white-space: nowrap; }
+#ac div.on { background: var(--sel); }
+#ac span { overflow: hidden; text-overflow: ellipsis; }
+#ac i { margin-left: auto; color: var(--muted); font-style: normal; }
+.empty { padding: 40px; text-align: center; color: var(--muted); }
+.error {
+  margin: 16px; padding: 12px 14px; border: 1px solid var(--danger); border-radius: 8px;
+  color: var(--danger); font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  body { grid-template-columns: 1fr; grid-template-rows: auto auto 1fr; }
+  aside { border-right: 0; border-bottom: 1px solid var(--line); max-height: 28vh; }
+  #status { text-align: left; }
+}
+</style>
+</head>
+<body>
+<header><h1>Lake <span>UI</span></h1><small>lake · read-only</small></header>
+<aside>
+  <div class="side-bar">
+    <input id="filter" type="search" placeholder="Filter tables and columns" aria-label="Filter tables and columns">
+    <button id="reload" title="Reload tables" aria-label="Reload tables">↻</button>
+  </div>
+  <div id="tree"><div class="note">Loading tables…</div></div>
+</aside>
+<main>
+  <textarea id="sql" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="SQL"></textarea>
+  <div id="ac" role="listbox" hidden></div>
+  <div class="bar">
+    <button id="run" class="primary" title="Run the query, or the selected text">Run<kbd>⌘↵</kbd></button>
+    <button id="cancel" disabled title="Stop the running query (Esc)">Cancel</button>
+    <button id="csv" title="Download every row as CSV">Download CSV</button>
+    <span id="status"></span>
+  </div>
+  <div id="result"><div class="empty">One statement at a time: SELECT, FROM, DESCRIBE, SHOW, SUMMARIZE…<br>Tables are in the <code>lake</code> database, e.g. <code>SELECT * FROM raw.orders</code>.</div></div>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const sqlBox = $('#sql'), statusEl = $('#status'), resultEl = $('#result');
+const NUMERIC = /^(U?(TINY|SMALL|BIG|HUGE)?INT(EGER)?|DOUBLE|FLOAT|REAL|DECIMAL.*|NUMERIC.*)$/;
+let ctrl = null, timer = null, tables = [];
+
+function load(k) { try { return localStorage.getItem(k); } catch { return null; } }
+function save(k, v) { try { localStorage.setItem(k, v); } catch {} }
+
+function el(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) k === 'class' ? e.className = v : e.setAttribute(k, v);
+  e.append(...kids);
+  return e;
+}
+
+// SQL to run: the selection if there is one, else the whole editor.
+function currentSQL() {
+  const sel = sqlBox.value.slice(sqlBox.selectionStart, sqlBox.selectionEnd);
+  return sel.trim() ? sel : sqlBox.value;
+}
+
+function ident(s) { return /^[a-z_][a-z0-9_]*$/.test(s) ? s : '"' + s.replaceAll('"', '""') + '"'; }
+
+async function post(path, sql, signal) {
+  const r = await fetch(path, {
+    method: 'POST', signal, body: JSON.stringify({ sql }),
+    headers: { 'X-Lake-UI': '1', 'Content-Type': 'application/json' },
+  });
+  if (!r.ok) {
+    let msg = r.status + ' ' + r.statusText;
+    try { msg = (await r.json()).error || msg; } catch {}
+    throw new Error(msg);
+  }
+  return r;
+}
+
+function busy(on, label) {
+  $('#run').disabled = $('#csv').disabled = on;
+  $('#cancel').disabled = !on;
+  clearInterval(timer);
+  if (on) {
+    const t0 = performance.now();
+    const tick = () => statusEl.textContent = `${label} ${((performance.now() - t0) / 1000).toFixed(1)} s`;
+    tick();
+    timer = setInterval(tick, 100);
+  }
+}
+
+async function run(kind) {
+  if (ctrl) return;
+  const sql = currentSQL();
+  if (!sql.trim()) return;
+  ctrl = new AbortController();
+  busy(true, kind === 'csv' ? 'Exporting…' : 'Running…');
+  try {
+    const r = await post(kind === 'csv' ? 'api/csv' : 'api/query', sql, ctrl.signal);
+    if (kind === 'csv') {
+      const blob = await r.blob();
+      const a = el('a', { href: URL.createObjectURL(blob), download: 'lake.csv' });
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      statusEl.textContent = `Downloaded lake.csv (${fmtBytes(blob.size)})`;
+    } else {
+      render(await r.json());
+    }
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      statusEl.textContent = 'Cancelled';
+    } else {
+      statusEl.textContent = kind === 'csv' ? 'Export failed' : 'Failed';
+      resultEl.replaceChildren(el('div', { class: 'error' }, e.message));
+    }
+  } finally {
+    ctrl = null;
+    busy(false);
+  }
+}
+
+function fmtBytes(n) {
+  for (const u of ['B', 'KB', 'MB', 'GB']) { if (n < 1024 || u === 'GB') return (u === 'B' ? n : n.toFixed(1)) + ' ' + u; n /= 1024; }
+}
+
+function render(res) {
+  const n = res.rows.length;
+  statusEl.textContent = `${n.toLocaleString()} row${n === 1 ? '' : 's'}` +
+    (res.truncated ? ` (only the first ${n.toLocaleString()} shown; Download CSV has all)` : '') +
+    ` · ${res.ms.toLocaleString()} ms`;
+  const num = res.columns.map(c => NUMERIC.test(c.type));
+  const head = el('tr', {}, el('th', { class: 'rn' }, '#'),
+    ...res.columns.map((c, i) => el('th', { class: num[i] ? 'num' : '' }, c.name, el('small', {}, c.type))));
+  const body = document.createDocumentFragment();
+  res.rows.forEach((row, r) => {
+    const tr = el('tr', {}, el('td', { class: 'rn' }, String(r + 1)));
+    row.forEach((v, i) => {
+      const td = el('td', num[i] ? { class: 'num' } : {});
+      if (v === null) td.append(el('span', { class: 'null' }, 'NULL'));
+      else { const s = typeof v === 'object' ? JSON.stringify(v) : String(v); td.textContent = s; if (s.length > 60) td.title = s; }
+      tr.append(td);
+    });
+    body.append(tr);
+  });
+  const table = el('table', {}, el('thead', {}, head), el('tbody', {}, body));
+  resultEl.replaceChildren(n ? table : el('div', {}, table, el('div', { class: 'empty' }, 'No rows')));
+  resultEl.scrollTo(0, 0);
+}
+
+async function loadTables() {
+  $('#tree').replaceChildren(el('div', { class: 'note' }, 'Loading tables…'));
+  try {
+    const r = await fetch('api/tables');
+    if (!r.ok) { let m = r.statusText; try { m = (await r.json()).error || m; } catch {} throw new Error(m); }
+    tables = await r.json();
+    drawTree();
+  } catch (e) {
+    $('#tree').replaceChildren(el('div', { class: 'note err' }, e.message));
+  }
+}
+
+function drawTree() {
+  const f = $('#filter').value.trim().toLowerCase();
+  const out = document.createDocumentFragment();
+  let schema = null, shown = 0;
+  for (const t of tables) {
+    const full = t.schema + '.' + t.name;
+    const colHit = f && t.columns.some(c => c.name.toLowerCase().includes(f));
+    if (f && !full.toLowerCase().includes(f) && !colHit) continue;
+    if (t.schema !== schema) { schema = t.schema; out.append(el('h2', {}, schema)); }
+    const q = el('button', { title: `SELECT * FROM ${full} LIMIT 100` }, 'query');
+    q.addEventListener('click', e => {
+      e.preventDefault();
+      sqlBox.value = `SELECT * FROM ${ident(t.schema)}.${ident(t.name)} LIMIT 100;`;
+      save('lake-ui.sql', sqlBox.value);
+      run('query');
+    });
+    const d = el('details', {}, el('summary', {}, el('b', { title: full }, t.name), q),
+      el('ul', {}, ...t.columns.map(c => el('li', {}, el('span', { title: c.name }, c.name), el('i', {}, c.type)))));
+    if (colHit) d.open = true;
+    out.append(d);
+    shown++;
+  }
+  if (!shown) out.append(el('div', { class: 'note' }, tables.length ? 'No match' : 'The lake has no tables yet'));
+  $('#tree').replaceChildren(out);
+}
+
+// Autocomplete: keywords, schemas, tables, and columns of the tables the query
+// names. It opens while typing a word or after "x.", or on Ctrl+Space.
+const KEYWORDS = ('SELECT|FROM|WHERE|AND|OR|NOT|IN|IS|NULL|AS|ON|USING|JOIN|LEFT JOIN|INNER JOIN|' +
+  'FULL JOIN|CROSS JOIN|GROUP BY|ORDER BY|HAVING|QUALIFY|LIMIT|OFFSET|DISTINCT|LIKE|ILIKE|BETWEEN|' +
+  'CASE|WHEN|THEN|ELSE|END|WITH|UNION|UNION ALL|EXCEPT|INTERSECT|ASC|DESC|NULLS LAST|OVER|' +
+  'PARTITION BY|EXCLUDE|REPLACE|CAST|TRUE|FALSE|INTERVAL|DATE|TIMESTAMP|DESCRIBE|SHOW|' +
+  'SHOW ALL TABLES|SUMMARIZE|AT|VERSION|count|sum|avg|min|max|coalesce|date_trunc|strftime|' +
+  'row_number|ducklake_snapshots').split('|');
+const acEl = $('#ac');
+let acItems = [], acPick = 0, acFrom = 0;
+
+function reEscape(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+// Tables the editor mentions, so "o." or "amo" can offer their columns.
+function mentioned() {
+  const sql = sqlBox.value;
+  return tables.filter(t => new RegExp('(^|[^\\w.])(' + reEscape(t.schema) + '\\.)?' + reEscape(t.name) + '(?!\\w)', 'i').test(sql));
+}
+
+function columnsOf(ts) {
+  const m = new Map();
+  for (const t of ts) for (const c of t.columns) if (!m.has(c.name)) m.set(c.name, { label: c.name, insert: ident(c.name), kind: c.type });
+  return [...m.values()];
+}
+
+function candidates(quals, partial) {
+  if (quals[0] === 'lake' && !tables.some(t => t.schema === 'lake')) quals = quals.slice(1);
+  if (quals.length === 2) return columnsOf(tables.filter(t => t.schema.toLowerCase() === quals[0] && t.name.toLowerCase() === quals[1]));
+  if (quals.length === 1) {
+    const q = quals[0];
+    const out = tables.filter(t => t.schema.toLowerCase() === q).map(t => ({ label: t.name, insert: ident(t.name), kind: 'table' }));
+    out.push(...columnsOf(tables.filter(t => t.name.toLowerCase() === q)));
+    return out.length ? out : columnsOf(mentioned()); // probably an alias
+  }
+  const low = partial === partial.toLowerCase();
+  const schemas = [...new Set(tables.map(t => t.schema))];
+  return [
+    ...columnsOf(mentioned()),
+    ...tables.map(t => ({ label: t.schema + '.' + t.name, insert: ident(t.schema) + '.' + ident(t.name), kind: 'table', alt: t.name })),
+    ...schemas.map(s => ({ label: s, insert: ident(s), kind: 'schema' })),
+    ...KEYWORDS.map(k => ({ label: k, insert: low ? k.toLowerCase() : k.toUpperCase(), kind: 'keyword' })),
+  ];
+}
+
+function acClose() { acEl.hidden = true; acItems = []; }
+
+function acUpdate(force) {
+  const pos = sqlBox.selectionStart;
+  const before = sqlBox.value.slice(0, pos);
+  const line = before.slice(before.lastIndexOf('\n') + 1);
+  // Not inside a string or a comment.
+  if (sqlBox.selectionEnd !== pos || (before.split("'").length - 1) % 2 || line.includes('--')) return acClose();
+  const token = before.match(/[\w.]*$/)[0];
+  const parts = token.toLowerCase().split('.');
+  const partial = token.slice(token.lastIndexOf('.') + 1), p = parts.pop();
+  if (/^\d/.test(token) || (!force && !partial && !parts.length)) return acClose();
+  acItems = candidates(parts, partial).filter(c =>
+    c.label.toLowerCase().startsWith(p) || (c.alt && c.alt.toLowerCase().startsWith(p))).slice(0, 50);
+  // Nothing left to complete when the word is already typed out in full.
+  if (!acItems.length || (acItems.length === 1 && acItems[0].insert.toLowerCase() === p)) return acClose();
+  acFrom = pos - partial.length;
+  acPick = 0;
+  acEl.replaceChildren(...acItems.map((c, i) => {
+    const d = el('div', { role: 'option' }, el('span', {}, c.label), el('i', {}, c.kind));
+    d.addEventListener('mousedown', e => { e.preventDefault(); acPick = i; acAccept(); });
+    return d;
+  }));
+  acShow();
+  const xy = caretXY(acFrom), r = sqlBox.getBoundingClientRect();
+  const top = r.top + xy.y - sqlBox.scrollTop;
+  acEl.style.left = Math.min(r.left + xy.x - sqlBox.scrollLeft, innerWidth - acEl.offsetWidth - 8) + 'px';
+  acEl.style.top = (top + acEl.offsetHeight > innerHeight ? top - xy.h - acEl.offsetHeight : top) + 'px';
+}
+
+function acShow() {
+  acEl.hidden = false;
+  [...acEl.children].forEach((d, i) => d.classList.toggle('on', i === acPick));
+  acEl.children[acPick].scrollIntoView({ block: 'nearest' });
+}
+
+function acAccept() {
+  const c = acItems[acPick];
+  sqlBox.setSelectionRange(acFrom, sqlBox.selectionStart);
+  document.execCommand('insertText', false, c.insert); // keeps undo working
+  acClose();
+}
+
+// Where the text at pos sits in the editor, measured with a hidden copy of it.
+function caretXY(pos) {
+  const cs = getComputedStyle(sqlBox);
+  const m = el('div');
+  for (const p of ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'tabSize',
+    'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft']) m.style[p] = cs[p];
+  Object.assign(m.style, { position: 'fixed', top: 0, left: 0, visibility: 'hidden', whiteSpace: 'pre-wrap',
+    overflowWrap: 'break-word', boxSizing: 'border-box', width: sqlBox.clientWidth + 'px' });
+  const s = el('span', {}, '​');
+  m.append(sqlBox.value.slice(0, pos), s);
+  document.body.append(m);
+  const xy = { x: s.offsetLeft, y: s.offsetTop + s.offsetHeight, h: s.offsetHeight };
+  m.remove();
+  return xy;
+}
+
+sqlBox.value = load('lake-ui.sql') ?? 'SHOW ALL TABLES;';
+sqlBox.addEventListener('input', e => {
+  save('lake-ui.sql', sqlBox.value);
+  if ((e.inputType === 'insertText' && /^[\w.]$/.test(e.data)) || (e.inputType?.startsWith('delete') && !acEl.hidden)) acUpdate();
+  else acClose();
+});
+sqlBox.addEventListener('blur', acClose);
+sqlBox.addEventListener('click', acClose);
+sqlBox.addEventListener('scroll', acClose);
+sqlBox.addEventListener('keydown', e => {
+  if (e.key === ' ' && e.ctrlKey) { e.preventDefault(); acUpdate(true); return; }
+  if (!acEl.hidden && !e.metaKey && !e.ctrlKey) {
+    const n = acItems.length;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault(); acPick = (acPick + (e.key === 'ArrowDown' ? 1 : n - 1)) % n; acShow(); return;
+    }
+    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); acAccept(); return; }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); acClose(); return; }
+  }
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { acClose(); e.preventDefault(); run('query'); }
+  else if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); document.execCommand('insertText', false, '  '); }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && ctrl) ctrl.abort(); });
+$('#run').addEventListener('click', () => run('query'));
+$('#csv').addEventListener('click', () => run('csv'));
+$('#cancel').addEventListener('click', () => ctrl && ctrl.abort());
+$('#reload').addEventListener('click', loadTables);
+$('#filter').addEventListener('input', drawTree);
+if (!/Mac|iPhone|iPad/.test(navigator.platform)) $('#run kbd').textContent = 'Ctrl↵';
+loadTables();
+sqlBox.focus();
+</script>
+</body>
+</html>

@@ -1,0 +1,68 @@
+relay: a small event log with subscriptions
+
+Applications publish events; services and agents read them live, wait for
+one, or pick up where they left off through a named consumer.
+
+EVENT
+  {"id":1042,"time":"…","topic":"url-to-bucket.download","type":"ok",
+   "run_id":"8f3a91c2d4e5f607","cause":1040,"key":"…","data":{…}}
+
+  id, time   set by the server; id only increases and is the cursor
+  topic      required: dot-separated a-z 0-9 _ - segments, convention <app>.<kind>
+  type       required: e.g. started, ok, failed (any 1-64 of A-Z a-z 0-9 _ . -)
+  run_id     optional: the same for every event of one run
+  cause      optional: id of the event that led to this one
+  key        optional idempotency key: a repeat within 24 h returns the original
+  data       optional JSON object up to 64 KB; failures put the text in data.error
+
+FILTERS (topic=…)
+  a.b   one topic     a.*   every topic starting with "a."     *   everything
+  Comma-separated lists are allowed, for type too: type=ok,failed
+
+HTTP (all /v1 endpoints need Authorization: Bearer $RELAY_TOKEN)
+  POST   /v1/events                    publish {"topic","type","run_id","cause","key","data"}
+                                       201 with the stored event, 200 if key repeated
+  GET    /v1/events                    ?topic&type&run_id&after=ID&limit=100&wait=30s
+                                       after defaults to the newest event, so with
+                                       wait it returns only new events; wait <= 60s
+                                       ?last=N instead returns the newest N
+                                       -> {"events":[…],"next":ID}  pass next as after
+  GET    /v1/topics                    topics, their types, counts and last event
+  PUT    /v1/consumers/NAME            {"topic":"a.*","type":"ok,failed","from":"latest"|"earliest"|ID}
+  GET    /v1/consumers                 every consumer with its cursor and backlog
+  GET    /v1/consumers/NAME/next       ?limit=1&wait=30s  events after the cursor
+                                       (the cursor does not move; "gap":true if
+                                       some were removed by retention)
+  POST   /v1/consumers/NAME/ack        {"id":ID}  move the cursor to ID
+  DELETE /v1/consumers/NAME
+  Delivery is at least once: an event comes back from next until it is acked.
+  Use one consumer name per reader. Errors are {"error":"…"}.
+  GET    /ui                           read-only dashboard for people (asks for the token)
+
+CLI (reads RELAY_URL and RELAY_TOKEN, or /etc/relay-client.env; prints JSON lines)
+  relay pub <topic> <type> [-run-id ID] [-cause ID] [-key K] [-data JSON|@file|-]
+  relay tail [-topic F] [-type T] [-run-id ID] [-after ID] [-n 20] [-f]
+  relay wait [-topic F] [-type T] [-run-id ID] [-after ID] [-timeout 10m]
+  relay topics
+  relay consumer <name> [-topic F] [-type T] [-from latest|earliest|ID]
+  relay consumers
+  relay next <name> [-n 1] [-wait 30s]
+  relay ack <name> <id>
+  relay listen <name> [-wait 60s] -- <cmd> [args…]
+  relay serve [-listen 127.0.0.1:8091] [-data DIR] [-retention 720h] [-token T]
+
+  Exit codes: 0 ok; 1 wait matched a "failed" event; 2 usage or server error;
+  3 wait timed out, or next found nothing.
+
+  wait starts from the newest event; with -run-id it also looks back through
+  that run's earlier events. Give -type ok,failed to skip "started".
+
+  listen runs <cmd> once per event, with the event JSON on stdin and
+  RELAY_EVENT_ID, RELAY_TOPIC, RELAY_TYPE, RELAY_RUN_ID set. Exit 0 acks the
+  event; anything else retries the same event after 5 s, doubling up to 5 min.
+
+EXAMPLES
+  relay pub url-to-bucket.download started -run-id abc -data '{"url":"https://…"}'
+  relay wait -run-id abc -type ok,failed -timeout 30m && echo downloaded
+  relay consumer indexer -topic 'url-to-bucket.*' -type ok
+  relay listen indexer -- ./index-new-file.sh

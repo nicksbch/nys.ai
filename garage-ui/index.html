@@ -1,0 +1,617 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Garage Browser</title>
+<style>
+:root {
+  --bg: #f5f6f8; --panel: #fff; --text: #1d2330; --muted: #6b7280; --line: #e3e6eb;
+  --accent: #d9480f; --accent-text: #fff; --hover: #f0f2f5; --sel: #fff0e6; --danger: #c92a2a;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #131519; --panel: #1b1e23; --text: #e6e8eb; --muted: #8b929c; --line: #2a2e35;
+    --accent: #ff7a2e; --accent-text: #131519; --hover: #23272e; --sel: #3a2416; --danger: #ff6b6b;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg); color: var(--text);
+  display: grid; grid-template-columns: 220px 1fr; grid-template-rows: auto 1fr;
+}
+header {
+  grid-column: 1 / -1; display: flex; align-items: baseline; gap: 12px;
+  padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel);
+}
+header h1 { margin: 0; font-size: 16px; }
+header h1 span { color: var(--accent); }
+header small { color: var(--muted); font-family: ui-monospace, Menlo, monospace; }
+aside { border-right: 1px solid var(--line); background: var(--panel); overflow: auto; padding: 8px; }
+aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 8px 8px 6px; }
+aside a {
+  display: block; padding: 6px 8px; border-radius: 6px; color: inherit; text-decoration: none;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+aside a:hover { background: var(--hover); }
+aside a.active { background: var(--sel); color: var(--accent); font-weight: 600; }
+main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+.crumbs { flex: 1 1 300px; min-width: 0; font-size: 15px; overflow-wrap: anywhere; }
+.crumbs a { color: var(--accent); text-decoration: none; }
+.crumbs a:hover { text-decoration: underline; }
+.crumbs .sep { color: var(--muted); margin: 0 4px; }
+button, select, input {
+  font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 6px; padding: 5px 10px;
+}
+button { cursor: pointer; }
+button:hover:not(:disabled) { background: var(--hover); }
+button:disabled { opacity: .45; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+button.danger { color: var(--danger); }
+button.primary.danger, #dlg-ok.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+#filter { width: 180px; }
+.list { flex: 1; overflow: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { position: sticky; top: 0; background: var(--bg); font-weight: 600; font-size: 12px; color: var(--muted); z-index: 1; }
+td.name { width: 100%; max-width: 0; overflow: hidden; text-overflow: ellipsis; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+tbody tr { cursor: default; }
+tbody tr:hover { background: var(--hover); }
+tbody tr.sel { background: var(--sel); }
+td.name a { color: inherit; text-decoration: none; }
+td.name a:hover { color: var(--accent); text-decoration: underline; }
+.icon { display: inline-block; width: 1.4em; color: var(--muted); }
+.folder .icon { color: var(--accent); }
+.dl { color: var(--muted); text-decoration: none; padding: 0 4px; }
+.dl:hover { color: var(--accent); }
+.empty { padding: 40px; text-align: center; color: var(--muted); }
+.more { padding: 10px; text-align: center; }
+.status { padding: 6px 16px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--line); }
+
+#drop {
+  position: fixed; inset: 0; display: none; place-items: center; z-index: 10;
+  background: color-mix(in srgb, var(--accent) 18%, transparent); border: 3px dashed var(--accent);
+  font-size: 20px; font-weight: 600; color: var(--accent);
+}
+#drop.on { display: grid; }
+
+#uploads {
+  position: fixed; right: 16px; bottom: 16px; width: min(380px, calc(100vw - 32px)); max-height: 50vh;
+  display: none; flex-direction: column; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,.18); z-index: 5;
+}
+#uploads.on { display: flex; }
+#uploads .head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); font-weight: 600; }
+#uploads .head span { flex: 1; }
+#uploads ul { list-style: none; margin: 0; padding: 4px 12px 8px; overflow: auto; }
+#uploads li { padding: 5px 0; font-size: 12px; }
+#uploads li .n { display: flex; gap: 8px; }
+#uploads li .n b { flex: 1; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#uploads li .n i { font-style: normal; color: var(--muted); }
+#uploads li.error .n i { color: var(--danger); }
+#uploads progress { width: 100%; height: 4px; accent-color: var(--accent); }
+
+#toast {
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 20;
+  padding: 8px 14px; border-radius: 8px; background: var(--text); color: var(--bg);
+  opacity: 0; pointer-events: none; transition: opacity .2s; max-width: 90vw;
+}
+#toast.on { opacity: 1; }
+#toast.err { background: var(--danger); color: #fff; }
+
+dialog {
+  border: 1px solid var(--line); border-radius: 12px; padding: 0; width: min(440px, calc(100vw - 32px));
+  background: var(--panel); color: var(--text); box-shadow: 0 20px 50px rgba(0,0,0,.3);
+}
+dialog::backdrop { background: rgba(0,0,0,.35); }
+dialog form { padding: 18px; }
+dialog h3 { margin: 0 0 12px; font-size: 16px; }
+dialog p { margin: 0 0 12px; color: var(--muted); overflow-wrap: anywhere; }
+dialog label { display: block; margin-bottom: 12px; font-size: 12px; color: var(--muted); }
+dialog label input, dialog label select { display: block; width: 100%; margin-top: 4px; font-size: 14px; color: var(--text); }
+dialog menu { display: flex; flex-direction: row-reverse; gap: 8px; margin: 16px 0 0; padding: 0; }
+
+@media (max-width: 700px) {
+  body { grid-template-columns: 1fr; grid-template-rows: auto auto 1fr; }
+  aside { border-right: 0; border-bottom: 1px solid var(--line); max-height: 30vh; }
+  td.date, th.date { display: none; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1><span>●</span> Garage Browser</h1>
+  <small id="endpoint"></small>
+</header>
+<aside>
+  <h2>Buckets</h2>
+  <nav id="buckets"></nav>
+</aside>
+<main>
+  <div class="bar">
+    <div class="crumbs" id="crumbs"></div>
+    <input id="filter" type="search" placeholder="Filter this folder">
+  </div>
+  <div class="bar">
+    <button class="primary" id="b-upload">Upload files</button>
+    <button id="b-upload-dir">Upload folder</button>
+    <button id="b-mkdir">New folder</button>
+    <span style="width:8px"></span>
+    <button id="b-rename" disabled>Rename</button>
+    <button id="b-copy" disabled>Copy to…</button>
+    <button id="b-move" disabled>Move to…</button>
+    <button id="b-delete" class="danger" disabled>Delete</button>
+    <span style="flex:1"></span>
+    <button id="b-refresh" title="Refresh">↻</button>
+  </div>
+  <div class="list">
+    <table>
+      <thead><tr>
+        <th style="width:1%"><input type="checkbox" id="all" aria-label="Select all"></th>
+        <th>Name</th><th class="num">Size</th><th class="date">Modified</th><th></th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div id="more" class="more" hidden><button id="b-more">Load more</button></div>
+    <div id="empty" class="empty" hidden></div>
+  </div>
+  <div class="status" id="status"></div>
+</main>
+
+<input type="file" id="pick-files" multiple hidden>
+<input type="file" id="pick-dir" webkitdirectory hidden>
+<div id="drop">Drop files or folders to upload</div>
+<div id="uploads">
+  <div class="head"><span id="up-title">Uploads</span><button id="up-clear">Clear finished</button></div>
+  <ul id="up-list"></ul>
+</div>
+<div id="toast"></div>
+<dialog id="dlg">
+  <form method="dialog">
+    <h3 id="dlg-title"></h3>
+    <div id="dlg-body"></div>
+    <menu>
+      <button value="ok" id="dlg-ok" class="primary">OK</button>
+      <button value="cancel" formnovalidate>Cancel</button>
+    </menu>
+  </form>
+</dialog>
+
+<script>
+const $ = s => document.querySelector(s);
+const qs = o => new URLSearchParams(o).toString();
+
+function el(tag, props = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (k in e) e[k] = v;
+    else e.setAttribute(k, v);
+  }
+  e.append(...kids);
+  return e;
+}
+
+async function api(method, url, body) {
+  const r = await fetch(url, {
+    method,
+    headers: { 'X-Garage-UI': '1', ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error(data.error || r.statusText); e.status = r.status; throw e; }
+  return data;
+}
+
+let toastTimer;
+function toast(msg, err = false) {
+  const t = $('#toast');
+  t.textContent = msg; t.className = 'on' + (err ? ' err' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.className = '', err ? 6000 : 2500);
+}
+const fail = e => toast(e.message || String(e), true);
+
+const fmtSize = n => {
+  if (n < 1024) return n + ' B';
+  const u = ['KB', 'MB', 'GB', 'TB']; let i = -1;
+  do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1);
+  return n.toFixed(n < 10 ? 1 : 0) + ' ' + u[i];
+};
+const baseName = key => key.replace(/\/$/, '').split('/').pop();
+const normPrefix = p => { p = p.trim().replace(/^\/+/, '').replace(/\/+$/, ''); return p ? p + '/' : ''; };
+
+// --- state & routing ----------------------------------------------------
+
+const state = { buckets: [], bucket: '', prefix: '', folders: [], files: [], next: '', sel: new Set() };
+
+function parseHash() {
+  const h = location.hash.replace(/^#\/?/, '');
+  const i = h.indexOf('/');
+  try {
+    return {
+      bucket: decodeURIComponent(i < 0 ? h : h.slice(0, i)),
+      prefix: i < 0 ? '' : h.slice(i + 1).split('/').map(decodeURIComponent).join('/'),
+    };
+  } catch { return { bucket: '', prefix: '' }; }
+}
+const hrefFor = (bucket, prefix = '') =>
+  '#/' + encodeURIComponent(bucket) + '/' + prefix.split('/').map(encodeURIComponent).join('/');
+
+async function route() {
+  let { bucket, prefix } = parseHash();
+  if (!bucket && state.buckets.length) { location.replace(hrefFor(state.buckets[0])); return; }
+  state.bucket = bucket; state.prefix = prefix;
+  $('#filter').value = '';
+  renderBuckets();
+  await load();
+}
+window.addEventListener('hashchange', route);
+
+async function load(more = false) {
+  if (!state.bucket) { render(); return; }
+  const { bucket, prefix } = state;
+  $('#status').textContent = 'Loading…';
+  try {
+    const params = { bucket, prefix };
+    if (more) params.token = state.next;
+    const r = await api('GET', '/api/list?' + qs(params));
+    if (bucket !== state.bucket || prefix !== state.prefix) return; // navigated away meanwhile
+    if (!more) { state.folders = []; state.files = []; state.sel.clear(); }
+    state.folders.push(...r.folders);
+    state.files.push(...r.files);
+    state.next = r.next || '';
+    render();
+  } catch (e) { fail(e); $('#status').textContent = ''; }
+}
+const reload = () => load();
+
+// --- rendering ----------------------------------------------------------
+
+function renderBuckets() {
+  $('#buckets').replaceChildren(...state.buckets.map(b =>
+    el('a', { href: hrefFor(b), className: b === state.bucket ? 'active' : '', title: b }, b)));
+}
+
+function render() {
+  const { bucket, prefix } = state;
+  // breadcrumbs
+  const c = $('#crumbs'); c.replaceChildren();
+  if (bucket) {
+    c.append(el('a', { href: hrefFor(bucket) }, bucket));
+    let acc = '';
+    for (const part of prefix.split('/').filter(Boolean)) {
+      acc += part + '/';
+      c.append(el('span', { className: 'sep' }, '/'), el('a', { href: hrefFor(bucket, acc) }, part));
+    }
+  } else c.textContent = 'No bucket selected';
+
+  const f = $('#filter').value.toLowerCase();
+  const match = k => !f || baseName(k).toLowerCase().includes(f);
+  const rows = [];
+  for (const key of state.folders.filter(match)) {
+    rows.push(row(key, true,
+      el('a', { href: hrefFor(bucket, key), onclick: e => e.stopPropagation() }, baseName(key) + '/'), '', ''));
+  }
+  for (const o of state.files.filter(match)) {
+    const url = '/api/object?' + qs({ bucket, key: o.key });
+    rows.push(row(o.key, false,
+      el('a', { href: url + '&inline', target: '_blank', rel: 'noopener', onclick: e => e.stopPropagation() }, baseName(o.key)),
+      fmtSize(o.size), new Date(o.modified).toLocaleString(),
+      el('a', { href: url, className: 'dl', title: 'Download', onclick: e => e.stopPropagation() }, '⤓')));
+  }
+  $('#rows').replaceChildren(...rows);
+
+  const total = state.folders.length + state.files.length;
+  $('#more').hidden = !state.next;
+  const empty = $('#empty');
+  empty.hidden = rows.length > 0;
+  empty.textContent = !bucket ? 'No buckets available for this key.'
+    : total ? 'Nothing matches the filter.' : 'This folder is empty. Drop files here to upload.';
+  const bytes = state.files.reduce((s, o) => s + o.size, 0);
+  $('#status').textContent = bucket
+    ? `${state.folders.length} folders, ${state.files.length} files (${fmtSize(bytes)})${state.next ? ' — more available' : ''}`
+    : '';
+  updateSel();
+}
+
+function row(key, folder, nameEl, size, date, action = '') {
+  const cb = el('input', { type: 'checkbox', checked: state.sel.has(key), 'aria-label': 'Select' });
+  const tr = el('tr', { className: (folder ? 'folder' : '') + (state.sel.has(key) ? ' sel' : '') },
+    el('td', {}, cb),
+    el('td', { className: 'name', title: key }, el('span', { className: 'icon' }, folder ? '▸' : '·'), nameEl),
+    el('td', { className: 'num' }, size),
+    el('td', { className: 'num date' }, date),
+    el('td', {}, action));
+  const toggle = on => {
+    on ? state.sel.add(key) : state.sel.delete(key);
+    cb.checked = on; tr.classList.toggle('sel', on); updateSel();
+  };
+  cb.addEventListener('click', e => { e.stopPropagation(); toggle(cb.checked); });
+  tr.addEventListener('click', () => toggle(!state.sel.has(key)));
+  if (folder) tr.addEventListener('dblclick', () => location.hash = hrefFor(state.bucket, key));
+  return tr;
+}
+
+function updateSel() {
+  const n = state.sel.size;
+  $('#b-rename').disabled = n !== 1;
+  for (const id of ['#b-copy', '#b-move', '#b-delete']) $(id).disabled = n === 0;
+  const visible = $('#rows').children.length;
+  $('#all').checked = visible > 0 && n >= visible;
+  $('#all').indeterminate = n > 0 && n < visible;
+  for (const b of ['#b-upload', '#b-upload-dir', '#b-mkdir']) $(b).disabled = !state.bucket;
+}
+
+$('#all').addEventListener('change', e => {
+  const f = $('#filter').value.toLowerCase();
+  const keys = [...state.folders, ...state.files.map(o => o.key)]
+    .filter(k => !f || baseName(k).toLowerCase().includes(f));
+  state.sel = new Set(e.target.checked ? keys : []);
+  render();
+});
+$('#filter').addEventListener('input', () => { state.sel.clear(); render(); });
+
+// --- dialogs ------------------------------------------------------------
+
+function ask({ title, message = '', fields = [], ok = 'OK', danger = false }) {
+  const dlg = $('#dlg');
+  $('#dlg-title').textContent = title;
+  const body = $('#dlg-body'); body.replaceChildren();
+  if (message) body.append(el('p', {}, message));
+  const inputs = {};
+  for (const f of fields) {
+    let input;
+    if (f.options) {
+      input = el('select');
+      for (const o of f.options) input.add(new Option(o, o, false, o === f.value));
+    } else {
+      input = el('input', { value: f.value || '', placeholder: f.placeholder || '', required: !!f.required, spellcheck: false });
+    }
+    inputs[f.name] = input;
+    body.append(el('label', {}, f.label, input));
+  }
+  const okBtn = $('#dlg-ok');
+  okBtn.textContent = ok; okBtn.className = danger ? 'danger' : 'primary';
+  dlg.returnValue = '';
+  dlg.showModal();
+  const first = Object.values(inputs).find(i => i.tagName === 'INPUT');
+  if (first) {
+    first.focus();
+    const dot = first.value.lastIndexOf('.');
+    first.setSelectionRange(0, dot > 0 ? dot : first.value.length);
+  } else okBtn.focus();
+  return new Promise(res => dlg.addEventListener('close', () => {
+    if (dlg.returnValue !== 'ok') return res(null);
+    res(Object.fromEntries(Object.entries(inputs).map(([k, i]) => [k, i.value.trim()])));
+  }, { once: true }));
+}
+
+// --- actions ------------------------------------------------------------
+
+async function busy(label, fn) {
+  $('#status').textContent = label;
+  document.body.style.cursor = 'progress';
+  try { return await fn(); } finally { document.body.style.cursor = ''; }
+}
+
+async function transfer(op, items) {
+  const verb = op === 'move' ? 'Moving' : 'Copying';
+  let overwrite = false;
+  for (;;) {
+    try {
+      const r = await busy(`${verb}…`, () => api('POST', '/api/transfer', { op, items, overwrite }));
+      toast(`${op === 'move' ? 'Moved' : 'Copied'} ${r.count} object${r.count === 1 ? '' : 's'}`);
+      break;
+    } catch (e) {
+      if (e.status !== 409 || overwrite) { fail(e); break; }
+      const ok = await ask({ title: 'Overwrite?', message: e.message + '. Replace it?', ok: 'Overwrite', danger: true });
+      if (!ok) break;
+      overwrite = true;
+    }
+  }
+  reload();
+}
+
+async function rename() {
+  const key = [...state.sel][0];
+  const folder = key.endsWith('/');
+  const old = baseName(key);
+  const r = await ask({ title: `Rename ${folder ? 'folder' : 'file'}`, fields: [{ name: 'name', label: 'New name', value: old, required: true }], ok: 'Rename' });
+  const name = r && r.name.replace(/^\/+|\/+$/g, '');
+  if (!name || name === old) return;
+  const parent = key.slice(0, key.length - old.length - (folder ? 1 : 0));
+  transfer('move', [{ srcBucket: state.bucket, srcKey: key, dstBucket: state.bucket, dstKey: parent + name + (folder ? '/' : '') }]);
+}
+
+async function copyMove(op) {
+  const keys = [...state.sel];
+  const r = await ask({
+    title: `${op === 'move' ? 'Move' : 'Copy'} ${keys.length} item${keys.length === 1 ? '' : 's'}`,
+    fields: [
+      { name: 'bucket', label: 'Destination bucket', value: state.bucket, options: state.buckets },
+      { name: 'prefix', label: 'Destination folder (empty = bucket root, created if missing)', value: state.prefix, placeholder: 'path/to/folder/' },
+    ],
+    ok: op === 'move' ? 'Move' : 'Copy',
+  });
+  if (!r) return;
+  const dst = normPrefix(r.prefix);
+  transfer(op, keys.map(k => ({
+    srcBucket: state.bucket, srcKey: k, dstBucket: r.bucket,
+    dstKey: dst + baseName(k) + (k.endsWith('/') ? '/' : ''),
+  })));
+}
+
+async function del() {
+  const keys = [...state.sel];
+  const folders = keys.filter(k => k.endsWith('/')).length;
+  const what = keys.length === 1 ? `"${baseName(keys[0])}"` : `${keys.length} items`;
+  const ok = await ask({
+    title: `Delete ${what}?`,
+    message: (folders ? 'Folders are deleted with everything inside them. ' : '') + 'This cannot be undone.',
+    ok: 'Delete', danger: true,
+  });
+  if (!ok) return;
+  try {
+    const r = await busy('Deleting…', () => api('POST', '/api/delete', { bucket: state.bucket, keys }));
+    toast(`Deleted ${r.deleted} object${r.deleted === 1 ? '' : 's'}`);
+  } catch (e) { fail(e); }
+  reload();
+}
+
+async function mkdir() {
+  const r = await ask({ title: 'New folder', fields: [{ name: 'name', label: 'Folder name', required: true }], ok: 'Create' });
+  const name = r && r.name.replace(/^\/+|\/+$/g, '');
+  if (!name) return;
+  try { await api('POST', '/api/folder', { bucket: state.bucket, key: state.prefix + name + '/' }); }
+  catch (e) { fail(e); }
+  reload();
+}
+
+$('#b-rename').onclick = rename;
+$('#b-copy').onclick = () => copyMove('copy');
+$('#b-move').onclick = () => copyMove('move');
+$('#b-delete').onclick = del;
+$('#b-mkdir').onclick = mkdir;
+$('#b-refresh').onclick = reload;
+$('#b-more').onclick = () => load(true);
+
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input, select, dialog') || $('#dlg').open) return;
+  if ((e.key === 'Delete' || e.key === 'Backspace') && state.sel.size) { e.preventDefault(); del(); }
+  else if (e.key === 'F2' && state.sel.size === 1) { e.preventDefault(); rename(); }
+});
+
+// --- uploads ------------------------------------------------------------
+
+const uploads = [];
+let active = 0;
+
+function enqueue(files) {
+  if (!state.bucket || !files.length) return;
+  for (const { file, path } of files) {
+    const it = { file, bucket: state.bucket, key: state.prefix + path, loaded: 0, status: 'queued' };
+    it.bar = el('progress', { max: file.size || 1, value: 0 });
+    it.info = el('i', {}, 'queued');
+    it.li = el('li', {}, el('div', { className: 'n' }, el('b', { title: it.key }, path), it.info), it.bar);
+    $('#up-list').append(it.li);
+    uploads.push(it);
+  }
+  $('#uploads').classList.add('on');
+  pump();
+}
+
+function pump() {
+  while (active < 3) {
+    const it = uploads.find(i => i.status === 'queued');
+    if (!it) break;
+    start(it);
+  }
+  const left = uploads.filter(i => i.status === 'queued' || i.status === 'uploading').length;
+  const errs = uploads.filter(i => i.status === 'error').length;
+  $('#up-title').textContent = left ? `Uploading ${left} file${left === 1 ? '' : 's'}…`
+    : `Uploads done${errs ? ` — ${errs} failed` : ''}`;
+}
+
+function start(it) {
+  it.status = 'uploading'; active++;
+  const xhr = new XMLHttpRequest();
+  xhr.open('PUT', '/api/object?' + qs({ bucket: it.bucket, key: it.key }));
+  xhr.setRequestHeader('X-Garage-UI', '1');
+  if (it.file.type) xhr.setRequestHeader('Content-Type', it.file.type);
+  xhr.upload.onprogress = e => {
+    it.bar.value = e.loaded;
+    it.info.textContent = e.loaded >= it.file.size ? 'finishing…' : `${fmtSize(e.loaded)} / ${fmtSize(it.file.size)}`;
+  };
+  xhr.onload = () => {
+    let err = null;
+    if (xhr.status >= 300) { try { err = JSON.parse(xhr.responseText).error; } catch {} err ||= xhr.statusText || 'failed'; }
+    finish(it, err);
+  };
+  xhr.onerror = () => finish(it, 'network error');
+  xhr.send(it.file);
+}
+
+function finish(it, err) {
+  active--;
+  it.status = err ? 'error' : 'done';
+  it.li.classList.toggle('error', !!err);
+  it.info.textContent = err || fmtSize(it.file.size);
+  it.info.title = err || '';
+  it.bar.value = err ? 0 : it.bar.max;
+  pump();
+  const pending = uploads.some(i => i.status === 'queued' || i.status === 'uploading');
+  if (!pending || uploads.filter(i => i.status === 'done').length % 20 === 0) {
+    if (it.bucket === state.bucket) reload();
+  }
+}
+
+$('#up-clear').onclick = () => {
+  for (let i = uploads.length - 1; i >= 0; i--) {
+    if (uploads[i].status === 'done' || uploads[i].status === 'error') { uploads[i].li.remove(); uploads.splice(i, 1); }
+  }
+  if (!uploads.length) $('#uploads').classList.remove('on');
+  pump();
+};
+
+$('#b-upload').onclick = () => $('#pick-files').click();
+$('#b-upload-dir').onclick = () => $('#pick-dir').click();
+for (const id of ['#pick-files', '#pick-dir']) {
+  $(id).addEventListener('change', e => {
+    enqueue([...e.target.files].map(f => ({ file: f, path: f.webkitRelativePath || f.name })));
+    e.target.value = '';
+  });
+}
+
+// Drag and drop, including whole folders.
+async function filesFromDrop(dt) {
+  const entries = [...dt.items].map(i => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
+  if (!entries.length) return [...dt.files].map(f => ({ file: f, path: f.name }));
+  const out = [];
+  const walk = async entry => {
+    if (entry.isFile) {
+      const file = await new Promise((res, rej) => entry.file(res, rej));
+      out.push({ file, path: entry.fullPath.replace(/^\//, '') });
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      for (;;) {
+        const batch = await new Promise((res, rej) => reader.readEntries(res, rej));
+        if (!batch.length) break;
+        for (const child of batch) await walk(child);
+      }
+    }
+  };
+  for (const e of entries) await walk(e);
+  return out;
+}
+
+const drop = $('#drop');
+const hasFiles = e => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+document.addEventListener('dragenter', e => { if (hasFiles(e) && state.bucket) drop.classList.add('on'); });
+drop.addEventListener('dragover', e => e.preventDefault());
+drop.addEventListener('dragleave', () => drop.classList.remove('on'));
+drop.addEventListener('drop', async e => {
+  e.preventDefault();
+  drop.classList.remove('on');
+  try { enqueue(await filesFromDrop(e.dataTransfer)); } catch (err) { fail(err); }
+});
+
+// --- boot ---------------------------------------------------------------
+
+(async () => {
+  try {
+    const [cfg, buckets] = await Promise.all([api('GET', '/api/config'), api('GET', '/api/buckets')]);
+    $('#endpoint').textContent = cfg.endpoint;
+    state.buckets = buckets;
+  } catch (e) { fail(e); }
+  route();
+})();
+</script>
+</body>
+</html>

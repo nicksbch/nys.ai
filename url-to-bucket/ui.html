@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>url-to-bucket</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --border: rgba(11,11,11,0.10);
+  --text: #0b0b0b; --text-2: #52514e; --muted: #7a7974;
+  --grid: #e1e0d9; --axis: #c3c2b7; --accent: #2a78d6; --track: #ebeae4;
+  --good: #0ca30c; --warning: #fab219; --critical: #d03b3b;
+  --good-text: #006300; --warning-text: #8a5a00; --critical-text: #b22a2a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --border: rgba(255,255,255,0.10);
+    --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e88;
+    --grid: #2c2c2a; --axis: #383835; --accent: #3987e5; --track: #2c2c2a;
+    --good-text: #0ca30c; --warning-text: #fab219; --critical-text: #e66767;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --border: rgba(255,255,255,0.10);
+  --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e88;
+  --grid: #2c2c2a; --axis: #383835; --accent: #3987e5; --track: #2c2c2a;
+  --good-text: #0ca30c; --warning-text: #fab219; --critical-text: #e66767;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1000px; margin: 0 auto; padding: 20px 16px 48px; }
+header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+h1 { font-size: 20px; margin: 0; }
+h2 { font-size: 13px; font-weight: 600; color: var(--text-2); margin: 0 0 10px; }
+.sub { color: var(--muted); font-size: 13px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; min-width: 0; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.empty { color: var(--muted); font-size: 13px; padding: 6px 0; }
+.error-line { color: var(--critical-text); margin-top: 8px; overflow-wrap: anywhere; }
+.live { font-size: 13px; color: var(--muted); }
+.live::before { content: "●"; margin-right: 4px; color: var(--muted); }
+.live.on::before { color: var(--good); }
+
+/* Form */
+form { display: grid; gap: 8px; grid-template-columns: 1fr 160px 200px auto; }
+@media (max-width: 760px) { form { grid-template-columns: 1fr 1fr; } form #url { grid-column: 1 / -1; } }
+input { font: inherit; font-size: 13px; color: var(--text); background: var(--page); border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px; min-width: 0; width: 100%; }
+input:focus { outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent); outline-offset: -1px; }
+button { font: inherit; font-size: 13px; font-weight: 600; color: #fff; background: var(--accent); border: 0; border-radius: 6px; padding: 7px 14px; cursor: pointer; white-space: nowrap; }
+button:disabled { opacity: .6; cursor: default; }
+.hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+
+/* Active downloads */
+.job { padding: 10px 0; border-top: 1px solid var(--grid); }
+.job:first-child { border-top: 0; padding-top: 2px; }
+.job.new { animation: flash 1.5s ease-out; }
+@keyframes flash { from { background: color-mix(in srgb, var(--accent) 14%, transparent); } }
+.job-head { display: flex; gap: 12px; align-items: baseline; justify-content: space-between; }
+.dest { font-weight: 600; overflow-wrap: anywhere; }
+.pct { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+.src { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar { height: 8px; background: var(--track); border-radius: 4px; overflow: hidden; margin: 7px 0 5px; }
+.bar > div { height: 100%; width: 0; background: var(--accent); border-radius: 4px; transition: width .9s linear; }
+.bar.unknown > div { width: 30%; animation: slide 1.4s ease-in-out infinite; }
+.bar.queued > div { width: 0; }
+@keyframes slide { from { margin-left: -30%; } to { margin-left: 100%; } }
+.stats { display: flex; gap: 14px; flex-wrap: wrap; color: var(--text-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* History */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; color: var(--text-2); font-weight: 600; border-bottom: 1px solid var(--axis); padding: 6px 8px; white-space: nowrap; }
+td { border-bottom: 1px solid var(--grid); padding: 6px 8px; vertical-align: top; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nowrap { white-space: nowrap; }
+.status-ok { color: var(--good-text); }
+.status-failed { color: var(--critical-text); }
+.err { color: var(--critical-text); font-size: 12px; overflow-wrap: anywhere; }
+td.path { max-width: 420px; overflow-wrap: anywhere; }
+td.path .src { white-space: normal; }
+@media (max-width: 600px) { .opt { display: none; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>url-to-bucket</h1>
+    <span class="live" id="live">connecting</span>
+  </header>
+
+  <section class="card">
+    <h2>New download</h2>
+    <form id="form" autocomplete="off">
+      <input id="url" type="url" placeholder="https://example.org/file.iso" required spellcheck="false">
+      <input id="bucket" list="buckets" placeholder="bucket" required spellcheck="false">
+      <input id="key" placeholder="folder/ or name (optional)" spellcheck="false">
+      <button id="submit">Download</button>
+      <datalist id="buckets"></datalist>
+    </form>
+    <div class="hint">The file name comes from the URL. A key ending in “/” is a folder.</div>
+    <div class="error-line" id="form-error" hidden></div>
+  </section>
+
+  <section class="card">
+    <h2>In progress</h2>
+    <div id="active"></div>
+  </section>
+
+  <section class="card">
+    <h2>Recent</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Status</th><th>Destination</th><th class="num">Size</th><th class="num opt">Took</th><th class="num opt">Avg speed</th><th>When</th></tr></thead>
+      <tbody id="history"></tbody>
+    </table></div>
+  </section>
+  <div class="error-line" id="fetch-error" hidden></div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const BUCKET_KEY = 'url-to-bucket-bucket';
+
+// el builds an element; children are nodes or strings (always set as text).
+function el(tag, attrs, ...children) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) if (v != null) e.setAttribute(k, v);
+  for (const c of children) if (c != null) e.append(c);
+  return e;
+}
+
+async function api(path, opts) {
+  const r = await fetch(path, {cache: 'no-store', ...opts});
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.error || r.status + ' ' + r.statusText);
+  return body;
+}
+
+function fmtBytes(n) {
+  if (n >= 1e9) return (n / 1e9).toFixed(2) + ' GB';
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + ' MB';
+  if (n >= 1e3) return (n / 1e3).toFixed(0) + ' kB';
+  return n + ' B';
+}
+const fmtRate = bps => fmtBytes(bps) + '/s';
+function fmtDur(s) {
+  s = Math.round(s);
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), r = s % 60;
+  if (h) return h + 'h' + String(m).padStart(2, '0') + 'm';
+  if (m) return m + 'm' + String(r).padStart(2, '0') + 's';
+  return r + 's';
+}
+function fmtAge(t) {
+  const s = Math.max(0, (Date.now() - new Date(t)) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.round(s / 60) + 'm ago';
+  if (s < 172800) return Math.floor(s / 3600) + 'h ago';
+  return Math.round(s / 86400) + 'd ago';
+}
+const dest = d => 's3://' + d.bucket + '/' + d.key;
+
+// --- Render -------------------------------------------------------------------
+
+let highlight = null;   // run ID just submitted
+
+function jobView(d) {
+  const known = d.total > 0;
+  const pct = known ? Math.min(100, 100 * d.bytes / d.total) : 0;
+  const rate = d.rate || 0;
+  const bar = el('div', {class: 'bar' + (d.state === 'queued' ? ' queued' : !known ? ' unknown' : '')}, el('div'));
+  if (known) bar.firstChild.style.width = pct.toFixed(1) + '%';
+
+  const stats = el('div', {class: 'stats'});
+  if (d.state === 'queued') {
+    stats.append(el('span', {}, 'Waiting for a free worker'));
+  } else if (!d.live) {
+    stats.append(el('span', {}, 'Running, no live progress (started from the command line, or before a restart)'));
+  } else {
+    stats.append(el('span', {}, known ? fmtBytes(d.bytes) + ' of ' + fmtBytes(d.total) : fmtBytes(d.bytes) + ' (size unknown)'));
+    if (rate > 0) stats.append(el('span', {}, fmtRate(rate)));
+    if (known && rate > 0 && d.bytes < d.total) stats.append(el('span', {}, 'ETA ' + fmtDur((d.total - d.bytes) / rate)));
+    if (known && d.bytes >= d.total) stats.append(el('span', {}, 'Finishing upload'));
+  }
+  return el('div', {class: 'job' + (d.run_id === highlight ? ' new' : ''), 'data-run': d.run_id},
+    el('div', {class: 'job-head'},
+      el('span', {class: 'dest mono'}, dest(d)),
+      el('span', {class: 'pct'}, d.state === 'queued' ? 'queued' : known ? Math.floor(pct) + '%' : '')),
+    el('div', {class: 'src', title: d.url}, d.url),
+    bar, stats);
+}
+
+// renderActive updates the list in place, so bars animate between polls
+// instead of being redrawn from zero.
+function renderActive(list) {
+  const box = $('active');
+  if (!list.length) { box.replaceChildren(el('div', {class: 'empty'}, 'Nothing running.')); return; }
+  const old = {};
+  for (const n of box.querySelectorAll('.job')) old[n.dataset.run] = n;
+  const nodes = list.map(d => {
+    const fresh = jobView(d), prev = old[d.run_id];
+    if (!prev) return fresh;
+    const pb = prev.querySelector('.bar'), fb = fresh.querySelector('.bar');
+    pb.className = fb.className;
+    pb.firstChild.style.width = fb.firstChild.style.width;
+    prev.querySelector('.job-head').replaceWith(fresh.querySelector('.job-head'));
+    prev.querySelector('.stats').replaceWith(fresh.querySelector('.stats'));
+    return prev;
+  });
+  box.replaceChildren(...nodes);
+}
+
+function renderHistory(list) {
+  const rows = list.map(d => {
+    const secs = d.duration_ms / 1000;
+    return el('tr', {},
+      el('td', {class: 'nowrap status-' + d.state}, d.state === 'ok' ? 'done' : 'failed'),
+      el('td', {class: 'path'},
+        el('div', {class: 'mono'}, dest(d)),
+        el('div', {class: 'src', title: d.url}, d.url),
+        d.error ? el('div', {class: 'err'}, d.error) : null),
+      el('td', {class: 'num'}, d.bytes ? fmtBytes(d.bytes) : '–'),
+      el('td', {class: 'num opt'}, secs ? fmtDur(secs) : '–'),
+      el('td', {class: 'num opt'}, d.state === 'ok' && secs > 0 ? fmtRate(d.bytes / secs) : '–'),
+      el('td', {class: 'nowrap', title: new Date(d.time).toLocaleString()}, fmtAge(d.time)));
+  });
+  $('history').replaceChildren(...(rows.length ? rows
+    : [el('tr', {}, el('td', {colspan: 6, class: 'empty'}, 'No downloads yet.'))]));
+}
+
+// --- Polling ------------------------------------------------------------------
+// Every second while something runs, every 5 s otherwise, paused while the
+// tab is hidden.
+
+let timer = null;
+async function poll() {
+  clearTimeout(timer);
+  let busy = false;
+  try {
+    const list = await api('api/downloads');
+    const active = list.filter(d => d.state === 'queued' || d.state === 'running');
+    busy = active.length > 0;
+    renderActive(active);
+    renderHistory(list.filter(d => d.state === 'ok' || d.state === 'failed'));
+    $('fetch-error').hidden = true;
+    $('live').classList.add('on');
+    $('live').textContent = busy ? 'live' : 'idle';
+  } catch (e) {
+    $('fetch-error').textContent = 'Could not load downloads: ' + e.message;
+    $('fetch-error').hidden = false;
+    $('live').classList.remove('on');
+    $('live').textContent = 'reconnecting';
+  }
+  if (!document.hidden) timer = setTimeout(poll, busy ? 1000 : 5000);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
+
+// --- Form ---------------------------------------------------------------------
+
+try { $('bucket').value = localStorage.getItem(BUCKET_KEY) || ''; } catch {}
+api('api/buckets').then(names => {
+  $('buckets').replaceChildren(...names.map(n => el('option', {value: n})));
+  if (!$('bucket').value && names.length === 1) $('bucket').value = names[0];
+}).catch(() => {});
+
+$('form').onsubmit = async ev => {
+  ev.preventDefault();
+  $('submit').disabled = true;
+  $('form-error').hidden = true;
+  const body = {url: $('url').value.trim(), bucket: $('bucket').value.trim()};
+  if ($('key').value.trim()) body.key = $('key').value.trim();
+  try {
+    const res = await api('api/downloads', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-Url-To-Bucket': '1'},
+      body: JSON.stringify(body),
+    });
+    highlight = res.run_id;
+    try { localStorage.setItem(BUCKET_KEY, body.bucket); } catch {}
+    $('url').value = '';
+    $('url').focus();
+    poll();
+  } catch (e) {
+    $('form-error').textContent = e.message;
+    $('form-error').hidden = false;
+  } finally {
+    $('submit').disabled = false;
+  }
+};
+
+poll();
+</script>
+</body>
+</html>

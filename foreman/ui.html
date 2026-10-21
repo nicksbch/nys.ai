@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>foreman</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --border: rgba(11,11,11,0.10);
+  --text: #0b0b0b; --text-2: #52514e; --muted: #7a7974;
+  --grid: #e1e0d9; --axis: #c3c2b7; --accent: #2a78d6;
+  --good: #0ca30c; --warning: #fab219; --critical: #d03b3b;
+  --good-text: #006300; --warning-text: #8a5a00; --critical-text: #b22a2a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --border: rgba(255,255,255,0.10);
+    --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e88;
+    --grid: #2c2c2a; --axis: #383835; --accent: #3987e5;
+    --good-text: #0ca30c; --warning-text: #fab219; --critical-text: #e66767;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --border: rgba(255,255,255,0.10);
+  --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e88;
+  --grid: #2c2c2a; --axis: #383835; --accent: #3987e5;
+  --good-text: #0ca30c; --warning-text: #fab219; --critical-text: #e66767;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 48px; }
+header { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+h1 { font-size: 20px; margin: 0; }
+h2 { font-size: 13px; font-weight: 600; color: var(--text-2); margin: 0 0 10px; }
+h3 { font-size: 14px; margin: 14px 0 6px; }
+h3:first-child { margin-top: 0; }
+nav { display: flex; gap: 14px; flex-wrap: wrap; }
+nav a { color: var(--text-2); text-decoration: none; padding-bottom: 2px; border-bottom: 2px solid transparent; }
+nav a.on { color: var(--text); border-bottom-color: var(--accent); }
+.count { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: #fff; font-size: 11px; text-align: center; }
+.sub { color: var(--muted); font-size: 13px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; min-width: 0; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; color: var(--text-2); font-weight: 600; border-bottom: 1px solid var(--axis); padding: 6px 8px; white-space: nowrap; }
+td { border-bottom: 1px solid var(--grid); padding: 6px 8px; vertical-align: top; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nowrap { white-space: nowrap; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+tr.row { cursor: pointer; }
+tr.row:hover td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.preview { color: var(--text-2); font-size: 12px; max-width: 560px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; white-space: nowrap; border: 1px solid var(--border); }
+.s-answered, .s-ok { color: var(--accent); }
+.s-failed { color: var(--critical-text); }
+.s-running, .s-created { color: var(--warning-text); }
+.s-resolved { color: var(--good-text); }
+.s-dismissed, .s-unavailable, .s-interrupted { color: var(--muted); }
+.v-good { color: var(--good-text); }
+.v-bad { color: var(--critical-text); }
+.empty { color: var(--muted); padding: 8px 0; }
+.error-line { color: var(--critical-text); margin: 8px 0; }
+.waiting { color: var(--warning-text); margin: 8px 0; }
+.live { font-size: 13px; color: var(--muted); margin-left: auto; }
+.live::before { content: "●"; margin-right: 4px; color: var(--muted); }
+.live.on::before { color: var(--good); }
+.filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; align-items: center; }
+input, select, textarea { font: inherit; font-size: 13px; color: var(--text); background: var(--page); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; min-width: 0; }
+textarea { width: 100%; min-height: 64px; resize: vertical; }
+button { font: inherit; font-size: 13px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+button:disabled { opacity: 0.45; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
+.result { white-space: pre-wrap; overflow-wrap: anywhere; }
+pre { margin: 4px 0; padding: 8px; max-height: 420px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--page); border: 1px solid var(--border); border-radius: 6px; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+details > summary { cursor: pointer; color: var(--text-2); font-size: 13px; margin: 4px 0; }
+.step { border-left: 2px solid var(--grid); padding: 2px 0 6px 12px; margin: 8px 0; }
+.step.tool { border-left-color: var(--accent); margin-left: 12px; }
+.step.tool.err { border-left-color: var(--critical); }
+.step-head { font-size: 12px; color: var(--text-2); }
+.grid2 { display: grid; gap: 0 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 700px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+a.link { color: var(--accent); text-decoration: none; }
+a.link:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>foreman</h1>
+    <nav>
+      <a href="#inbox" data-nav="inbox">Inbox <span class="count" id="inbox-count" hidden></span></a>
+      <a href="#tasks" data-nav="tasks">All tasks</a>
+      <a href="#defs" data-nav="defs">Agents &amp; task types</a>
+    </nav>
+    <span class="live" id="live">live</span>
+  </header>
+  <div class="error-line" id="error" hidden></div>
+  <div id="view"></div>
+</main>
+<script>
+"use strict";
+const $ = (s, el = document) => el.querySelector(s);
+const view = $("#view");
+
+// --- helpers ---------------------------------------------------------------
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+async function api(path, body) {
+  const opts = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+  // From the origin, which never holds credentials, so the page also works
+  // when opened as http://user:pass@host/ui.
+  const r = await fetch(new URL(path, location.origin), opts);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+}
+function ago(t) {
+  if (!t) return "";
+  const s = (Date.now() - new Date(t)) / 1000;
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.round(s / 60) + " min ago";
+  if (s < 86400) return Math.round(s / 3600) + " h ago";
+  return Math.round(s / 86400) + " d ago";
+}
+function when(t) { return t ? new Date(t).toLocaleString() : ""; }
+function dur(ms) {
+  if (ms == null) return "";
+  if (ms < 1000) return ms + " ms";
+  if (ms < 60000) return (ms / 1000).toFixed(1) + " s";
+  return Math.floor(ms / 60000) + " min " + Math.round((ms % 60000) / 1000) + " s";
+}
+function num(n) { return (n || 0).toLocaleString(); }
+function pill(status) { return `<span class="pill s-${esc(status)}">${esc(status)}</span>`; }
+function verdict(v) { return v ? `<span class="v-${esc(v)}">${v === "good" ? "✓ good" : "✗ bad"}</span>` : ""; }
+function label(field) { return field.charAt(0).toUpperCase() + field.slice(1).replace(/_/g, " "); }
+function firstLine(s, n = 160) { s = String(s || "").trim().split("\n")[0]; return s.length > n ? s.slice(0, n) + "…" : s; }
+// unchanged reports whether a view's data is what is already drawn, so a
+// refresh doesn't close what you opened on the page.
+function unchanged(data) {
+  const sig = location.hash + JSON.stringify(data);
+  if (sig === state.sig) return true;
+  state.sig = sig;
+  return false;
+}
+function showError(msg) { const e = $("#error"); e.textContent = msg || ""; e.hidden = !msg; }
+function preview(t) {
+  if (t.result) { const k = Object.keys(t.result)[0]; if (k) return firstLine(t.result[k]); }
+  const last = t.runs && t.runs[t.runs.length - 1];
+  if (t.waiting) return "Waiting: " + firstLine(t.waiting);
+  return last && last.error ? firstLine(last.error) : "";
+}
+
+// --- task tables -----------------------------------------------------------
+function taskTable(tasks, empty) {
+  if (!tasks.length) return `<div class="empty">${esc(empty)}</div>`;
+  return `<div class="table-wrap"><table><thead><tr><th>Status</th><th>Task</th><th>Type</th>
+    <th class="num">Seen</th><th>Updated</th><th>Verdict</th></tr></thead><tbody>` +
+    tasks.map(t => `<tr class="row" data-task="${esc(t.id)}">
+      <td>${pill(t.status)}</td>
+      <td>${esc(t.title)}<div class="preview">${esc(preview(t))}</div></td>
+      <td class="nowrap">${esc(t.type)}</td>
+      <td class="num">${t.seen > 1 ? t.seen + "×" : ""}</td>
+      <td class="nowrap" title="${esc(when(t.updated))}">${esc(ago(t.updated))}</td>
+      <td class="nowrap">${verdict(t.verdict)}</td></tr>`).join("") + `</tbody></table></div>`;
+}
+view.addEventListener("click", ev => {
+  const row = ev.target.closest("tr.row[data-task]");
+  if (row && !ev.target.closest("a,button")) location.hash = "#task/" + row.dataset.task;
+});
+
+// --- views -----------------------------------------------------------------
+const views = {
+  async inbox() {
+    const [waiting, busy] = await Promise.all([api("/api/tasks?status=inbox"), api("/api/tasks?status=created,running")]);
+    if (unchanged([waiting, busy])) return;
+    view.innerHTML = `
+      <section class="card"><h2>Waiting for you (${waiting.total})</h2>
+        ${taskTable(waiting.tasks, "Nothing to review. Answered and failed tasks show up here.")}</section>
+      <section class="card"><h2>In progress (${busy.total})</h2>
+        ${taskTable(busy.tasks, "No task is running or waiting for a run.")}</section>`;
+  },
+
+  async tasks() {
+    const f = state.filters;
+    if (!state.types) state.types = (await api("/api/types")).types;
+    const q = new URLSearchParams({ limit: 300 });
+    if (f.status) q.set("status", f.status);
+    if (f.type) q.set("type", f.type);
+    if (f.verdict) q.set("verdict", f.verdict);
+    const data = await api("/api/tasks?" + q);
+    if (unchanged([data, f])) return;
+    const opt = (v, text, cur) => `<option value="${esc(v)}"${v === cur ? " selected" : ""}>${esc(text)}</option>`;
+    const statuses = [["", "Any status"], ["open", "Open"], ["inbox", "Waiting for you"], ["created", "Created"], ["running", "Running"],
+      ["answered", "Answered"], ["failed", "Failed"], ["resolved", "Resolved"], ["dismissed", "Dismissed"]];
+    view.innerHTML = `<section class="card">
+      <div class="filters">
+        <select id="f-status">${statuses.map(([v, t]) => opt(v, t, f.status)).join("")}</select>
+        <select id="f-type">${opt("", "Any task type", f.type)}${state.types.map(t => opt(t.name, t.name, f.type)).join("")}</select>
+        <select id="f-verdict">${[["", "Any verdict"], ["good", "Good"], ["bad", "Bad"], ["none", "No verdict"]].map(([v, t]) => opt(v, t, f.verdict)).join("")}</select>
+        <span class="sub">${data.total} task${data.total === 1 ? "" : "s"}${data.total > data.tasks.length ? `, newest ${data.tasks.length} shown` : ""}</span>
+      </div>
+      ${taskTable(data.tasks, "No task matches.")}</section>`;
+    for (const [id, key] of [["#f-status", "status"], ["#f-type", "type"], ["#f-verdict", "verdict"]]) {
+      $(id).addEventListener("change", ev => { state.filters[key] = ev.target.value; refresh(); });
+    }
+  },
+
+  async task(id) {
+    const [{ task: t, output }, meta] = await Promise.all([api("/api/tasks/" + encodeURIComponent(id)), state.meta || api("/api/agents")]);
+    state.meta = meta;
+    if (state.taskID !== id) { state.taskID = id; state.draft = null; state.open = new Set(); state.transcripts = {}; }
+    if (unchanged(t)) {
+      for (const rid of state.open) { // a running transcript still grows
+        const run = t.runs.find(r => r.id === rid);
+        if (run && run.status === "running") loadTranscript(rid, view.querySelector(`tr.transcript[data-for="${rid}"]`));
+      }
+      return;
+    }
+    const draft = state.draft || { verdict: t.verdict || "", note: t.note || "" };
+    const busy = t.status === "running" || t.status === "created";
+    const isClosed = t.status === "resolved" || t.status === "dismissed";
+    const fields = output && output.length ? output : Object.keys(t.result || {});
+    const lastRun = t.runs[t.runs.length - 1];
+
+    view.innerHTML = `
+      <section class="card">
+        <div class="sub"><a class="link" href="#inbox">← Inbox</a></div>
+        <h3>${esc(t.title)} ${pill(t.status)} ${verdict(t.verdict)}</h3>
+        <div class="sub">${esc(t.type)} · from ${esc(t.origin)}${t.event_id ? " (relay event " + t.event_id + ")" : ""} ·
+          created ${esc(when(t.created))}${t.seen > 1 ? ` · seen ${t.seen} times, last ${esc(ago(t.last_seen))}` : ""}</div>
+        ${t.waiting ? `<div class="waiting">Waiting to run: ${esc(t.waiting)}</div>` : ""}
+        ${t.status === "failed" && lastRun && lastRun.error ? `<div class="error-line">Last run failed: ${esc(lastRun.error)}</div>` : ""}
+      </section>
+      <div class="grid2">
+        <section class="card" style="grid-column: 1 / -1">
+          <h2>Result</h2>
+          ${t.result ? fields.map(f => `<h3>${esc(label(f))}</h3><div class="result">${esc(t.result[f])}</div>`).join("")
+            : `<div class="empty">${busy ? "No result yet: the task is " + esc(t.status) + "." : "No result: no run submitted one."}</div>`}
+        </section>
+        <section class="card">
+          <h2>Review</h2>
+          <div class="actions">
+            <button data-status="resolved" ${busy || isClosed ? "disabled" : ""}>Resolve</button>
+            <button data-status="dismissed" ${busy || isClosed ? "disabled" : ""}>Dismiss</button>
+            <span class="sub">${isClosed ? "Closed: " + esc(t.status) + "." : "Resolve when fixed, dismiss when it doesn't matter."}</span>
+          </div>
+          <div class="actions">
+            <label><input type="radio" name="verdict" value="good" ${draft.verdict === "good" ? "checked" : ""}> Good answer</label>
+            <label><input type="radio" name="verdict" value="bad" ${draft.verdict === "bad" ? "checked" : ""}> Bad answer</label>
+            <label><input type="radio" name="verdict" value="" ${draft.verdict === "" ? "checked" : ""}> No verdict</label>
+          </div>
+          <textarea id="note" placeholder="Note: what was right or wrong, what to change in the prompt">${esc(draft.note)}</textarea>
+          <div class="actions"><button id="save-verdict">Save verdict</button><span class="sub" id="verdict-msg"></span></div>
+        </section>
+        <section class="card">
+          <h2>Run again</h2>
+          <div class="sub">A new run on the same input, with this or another agent or model, to compare answers.</div>
+          <div class="actions">
+            <select id="rerun-agent"><option value="">Task type's agent</option>${meta.agents.map(a => `<option>${esc(a.name)}</option>`).join("")}</select>
+            <select id="rerun-model"><option value="">Agent's model</option>${meta.models.map(m => `<option>${esc(m)}</option>`).join("")}</select>
+            <button id="rerun" ${t.status === "answered" || t.status === "failed" ? "" : "disabled"}>Run again</button>
+          </div>
+        </section>
+      </div>
+      <section class="card">
+        <h2>Runs (${t.runs.length})</h2>
+        ${t.runs.length ? `<div class="table-wrap"><table><thead><tr><th>Status</th><th>Agent</th><th>Model</th><th>Started</th>
+          <th class="num">Time</th><th class="num">Steps</th><th class="num">Tokens in / out</th><th class="num">From cache</th><th>Run</th></tr></thead><tbody>` +
+          t.runs.slice().reverse().map(r => `<tr class="row run" data-run="${esc(r.id)}">
+            <td>${pill(r.status)}</td><td>${esc(r.agent)}</td><td>${esc(r.model)}</td>
+            <td class="nowrap" title="${esc(when(r.started))}">${esc(ago(r.started))}</td>
+            <td class="num">${esc(dur(r.duration_ms))}</td><td class="num">${r.steps || ""}</td>
+            <td class="num">${num(r.usage.input_tokens)} / ${num(r.usage.output_tokens)}</td>
+            <td class="num">${r.usage.cache_read_tokens ? num(r.usage.cache_read_tokens) : ""}</td>
+            <td class="mono">${esc(r.id)}</td></tr>
+            ${r.error ? `<tr><td></td><td colspan="8" class="${r.status === "failed" ? "error-line" : "sub"}">${esc(r.error)}</td></tr>` : ""}
+            <tr class="transcript" data-for="${esc(r.id)}" ${state.open.has(r.id) ? "" : "hidden"}><td colspan="9">${
+              state.transcripts[r.id] ? renderTranscript(state.transcripts[r.id]) : `<div class="empty">Loading…</div>`}</td></tr>`).join("") +
+          `</tbody></table></div><div class="sub">Click a run for its transcript. Its tool calls are in relay's dashboard as <span class="mono">mcp-hub.call</span> events with the same run id.</div>`
+          : `<div class="empty">No run yet.</div>`}
+      </section>
+      <section class="card">
+        <details><summary>Input: what the agent was given</summary><pre>${esc(t.input)}</pre></details>
+      </section>`;
+
+    // Review: keep what is being typed across refreshes.
+    const keepDraft = () => {
+      state.draft = { verdict: (view.querySelector('input[name="verdict"]:checked') || {}).value || "", note: $("#note").value };
+    };
+    view.querySelectorAll('input[name="verdict"]').forEach(el => el.addEventListener("change", keepDraft));
+    $("#note").addEventListener("input", keepDraft);
+    $("#save-verdict").addEventListener("click", () => act(async () => {
+      keepDraft();
+      await api(`/api/tasks/${id}/verdict`, { verdict: state.draft.verdict, note: state.draft.note });
+      state.draft = null;
+      $("#verdict-msg").textContent = "Saved.";
+    }));
+    view.querySelectorAll("button[data-status]").forEach(b => b.addEventListener("click", () =>
+      act(() => api(`/api/tasks/${id}/status`, { status: b.dataset.status }))));
+    $("#rerun").addEventListener("click", () => act(() =>
+      api(`/api/tasks/${id}/run`, { agent: $("#rerun-agent").value, model: $("#rerun-model").value })));
+
+    // Transcripts open and close in place; running ones are fetched again on each refresh.
+    view.querySelectorAll("tr.run").forEach(row => row.addEventListener("click", async () => {
+      const rid = row.dataset.run, tr = view.querySelector(`tr.transcript[data-for="${rid}"]`);
+      if (state.open.has(rid)) { state.open.delete(rid); tr.hidden = true; return; }
+      state.open.add(rid); tr.hidden = false;
+      await loadTranscript(rid, tr);
+    }));
+    for (const rid of state.open) {
+      const run = t.runs.find(r => r.id === rid);
+      if (run && (run.status === "running" || !state.transcripts[rid])) {
+        loadTranscript(rid, view.querySelector(`tr.transcript[data-for="${rid}"]`));
+      }
+    }
+  },
+
+  async defs() {
+    const [{ agents, models }, { types }] = await Promise.all([api("/api/agents"), api("/api/types")]);
+    if (unchanged([agents, types])) return;
+    state.types = types;
+    const c = x => `${x.tasks} tasks · ${x.answered} answered · ${x.failed} with a failed run · ${x.good} good · ${x.bad} bad`;
+    const draft = state.newTask || { type: types[0] ? types[0].name : "", input: "" };
+    view.innerHTML = `
+      <section class="card"><h2>Agents</h2>
+        ${agents.length ? agents.map(a => `<h3>${esc(a.name)} <span class="sub">${esc(a.description)}</span></h3>
+          <div class="sub">profile <span class="mono">${esc(a.profile)}</span> · model <span class="mono">${esc(a.model)}</span> ·
+            at most ${a.max_steps} steps and ${esc(a.timeout)} per run</div>
+          <div class="sub">${c(a.counts)}</div>
+          <details><summary>Prompt</summary><pre>${esc(a.prompt)}</pre></details>`).join("")
+          : `<div class="empty">No agents: add files to agents/ in foreman's config directory.</div>`}
+        <div class="sub" style="margin-top:10px">Models: ${models.map(m => `<span class="mono">${esc(m)}</span>`).join(", ") || "none"}</div>
+      </section>
+      <section class="card"><h2>Task types</h2>
+        ${types.length ? types.map(t => `<h3>${esc(t.name)} <span class="sub">${esc(t.description)}</span></h3>
+          <div class="sub">${[t.on_topic ? `on relay <span class="mono">${esc(t.on_topic)} ${esc((t.on_types || []).join(","))}</span>` : "",
+            t.every ? `every ${esc(t.every)}` : "", !t.on_topic && !t.every ? "started by you only" : ""].filter(Boolean).join(" · ")} ·
+            agent <span class="mono">${esc(t.agent)}</span>
+            ${t.group_by ? ` · grouped by <span class="mono">${esc(t.group_by.join(" "))}</span>` : ""} ·
+            result: <span class="mono">${esc(t.output.join(", "))}</span></div>
+          <div class="sub">${c(t.counts)} · <a class="link" href="#tasks" data-type="${esc(t.name)}">see its tasks</a></div>
+          <details><summary>Instructions</summary><pre>${esc(t.prompt)}</pre></details>`).join("")
+          : `<div class="empty">No task types: add files to tasks/ in foreman's config directory.</div>`}
+      </section>
+      ${types.length ? `<section class="card"><h2>New task</h2>
+        <div class="sub">Start a task yourself, for trying a prompt. The text is the agent's input, in place of a relay event.</div>
+        <div class="actions"><select id="new-type">${types.map(t => `<option${t.name === draft.type ? " selected" : ""}>${esc(t.name)}</option>`).join("")}</select></div>
+        <textarea id="new-input" placeholder="What the agent should work on">${esc(draft.input)}</textarea>
+        <div class="actions"><button class="primary" id="new-start">Start</button></div></section>` : ""}`;
+    view.querySelectorAll("a[data-type]").forEach(a => a.addEventListener("click", () => { state.filters = { type: a.dataset.type }; }));
+    if (types.length) {
+      const keep = () => { state.newTask = { type: $("#new-type").value, input: $("#new-input").value }; };
+      $("#new-type").addEventListener("change", keep);
+      $("#new-input").addEventListener("input", keep);
+      $("#new-start").addEventListener("click", () => act(async () => {
+        const { task } = await api("/api/tasks", { type: $("#new-type").value, input: $("#new-input").value });
+        state.newTask = null;
+        location.hash = "#task/" + task.id;
+      }, false));
+    }
+  },
+};
+
+async function loadTranscript(rid, tr) {
+  try {
+    const data = await api("/api/runs/" + encodeURIComponent(rid));
+    state.transcripts[rid] = data.records;
+    if (tr) tr.firstElementChild.innerHTML = renderTranscript(data.records);
+  } catch (err) {
+    if (tr) tr.firstElementChild.innerHTML = `<div class="error-line">${esc(err.message)}</div>`;
+  }
+}
+
+function pretty(v) {
+  if (typeof v === "string") { try { return JSON.stringify(JSON.parse(v), null, 2); } catch { return v; } }
+  return JSON.stringify(v, null, 2);
+}
+
+function renderTranscript(recs) {
+  return recs.map(r => {
+    switch (r.kind) {
+      case "start":
+        return `<div class="step"><div class="step-head">Started ${esc(when(r.t))} · agent ${esc(r.agent)} · model ${esc(r.model)} ·
+          profile ${esc(r.profile)}</div>
+          <div class="sub">Tools offered: <span class="mono">${esc((r.tools || []).concat("submit").join(", "))}</span>${
+            r.withheld && r.withheld.length ? ` · withheld (not read-only): <span class="mono">${esc(r.withheld.join(", "))}</span>` : ""}</div>
+          <details><summary>System prompt</summary><pre>${esc(r.system)}</pre></details>
+          <details><summary>Input</summary><pre>${esc(r.input)}</pre></details></div>`;
+      case "model": {
+        const u = r.usage || {};
+        return `<div class="step"><div class="step-head">Step ${r.step} · ${esc(r.stop)}${r.detail ? ": " + esc(r.detail) : ""} ·
+          ${esc(dur(r.duration_ms))} · ${num(u.input_tokens)} in / ${num(u.output_tokens)} out${u.cache_read_tokens ? " · " + num(u.cache_read_tokens) + " from cache" : ""} ·
+          answered by ${esc(r.answered_by)}</div>
+          ${r.text ? `<div class="result">${esc(r.text)}</div>` : ""}
+          ${(r.calls || []).length ? `<div class="sub">Asked for: ${r.calls.map(c => `<span class="mono">${esc(c.name)}</span>`).join(", ")}</div>` : ""}</div>`;
+      }
+      case "tool": {
+        const result = r.result == null ? "" : String(r.result);
+        const short = result.length < 600;
+        return `<div class="step tool${r.error ? " err" : ""}"><div class="step-head"><span class="mono">${esc(r.name)}</span>${
+          r.duration_ms != null ? " · " + esc(dur(r.duration_ms)) : ""}${r.error ? " · error" : ""}${r.cut ? " · cut to 16 KB for the model" : ""}</div>
+          <pre>${esc(pretty(r.args))}</pre>
+          ${result ? `<details${short ? " open" : ""}><summary>Result (${num(result.length)} characters)</summary><pre>${esc(pretty(result))}</pre></details>` : ""}</div>`;
+      }
+      case "end":
+        return `<div class="step"><div class="step-head">Ended ${pill(r.status)} after ${r.steps} steps${r.duration_ms != null ? ", " + esc(dur(r.duration_ms)) : ""}</div>
+          ${r.error ? `<div class="error-line">${esc(r.error)}</div>` : ""}</div>`;
+      default:
+        return "";
+    }
+  }).join("");
+}
+
+// act runs an action, shows its error if any, and refreshes the view.
+async function act(fn, refreshAfter = true) {
+  try { showError(""); await fn(); } catch (err) { showError("Action failed: " + err.message); return; }
+  if (refreshAfter) { state.drawn = null; refresh(); }
+}
+
+// --- routing and refresh -----------------------------------------------------
+const state = { filters: { status: "open" }, open: new Set(), transcripts: {} };
+let busy = false;
+
+async function refresh() {
+  if (busy) return;
+  busy = true;
+  const [name, arg] = (location.hash.slice(1) || "inbox").split("/");
+  document.querySelectorAll("nav a").forEach(a => a.classList.toggle("on", a.dataset.nav === name || (name === "task" && a.dataset.nav === "inbox")));
+  try {
+    // Don't redraw a page while something on it is being typed into.
+    const typing = document.activeElement && ["TEXTAREA", "INPUT", "SELECT"].includes(document.activeElement.tagName);
+    if (!(typing && state.drawn === location.hash)) {
+      await (views[name] || views.inbox)(decodeURIComponent(arg || ""));
+      state.drawn = location.hash;
+    }
+    const inbox = await api("/api/tasks?status=inbox&limit=1");
+    const n = $("#inbox-count");
+    n.textContent = inbox.total; n.hidden = !inbox.total;
+    document.title = inbox.total ? `(${inbox.total}) foreman` : "foreman";
+    $("#live").classList.add("on");
+    if (!$("#error").textContent.startsWith("Action failed")) showError("");
+  } catch (err) {
+    $("#live").classList.remove("on");
+    showError("Could not load: " + err.message);
+  } finally {
+    busy = false;
+  }
+}
+
+window.addEventListener("hashchange", () => { window.scrollTo(0, 0); state.drawn = null; state.sig = null; refresh(); });
+setInterval(() => { if (!document.hidden) refresh(); }, 5000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+refresh();
+</script>
+</body>
+</html>
