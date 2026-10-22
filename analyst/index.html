@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>analyst</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --border: rgba(11,11,11,0.10);
+  --text: #0b0b0b; --text-2: #52514e; --muted: #7a7974;
+  --grid: #e1e0d9; --axis: #c3c2b7; --accent: #2a78d6;
+  --critical-text: #b22a2a; --warning-text: #8a5a00;
+  --s1: #2a78d6; --s2: #e07b39; --s3: #2f9e6b; --s4: #b04fc0; --s5: #d6a32a; --s6: #4fb3c0; --s7: #c04f6b; --s8: #7a7974;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --border: rgba(255,255,255,0.10);
+    --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e88;
+    --grid: #2c2c2a; --axis: #383835; --accent: #3987e5;
+    --critical-text: #e66767; --warning-text: #fab219;
+    --s1: #3987e5; --s2: #f08c4a; --s3: #3fb47e; --s4: #c467d4; --s5: #e6b53c; --s6: #5cc6d4; --s7: #d4667f; --s8: #8f8e88;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --border: rgba(255,255,255,0.10);
+  --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e88;
+  --grid: #2c2c2a; --axis: #383835; --accent: #3987e5;
+  --critical-text: #e66767; --warning-text: #fab219;
+  --s1: #3987e5; --s2: #f08c4a; --s3: #3fb47e; --s4: #c467d4; --s5: #e6b53c; --s6: #5cc6d4; --s7: #d4667f; --s8: #8f8e88;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--page); color: var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; display: flex; }
+aside { width: 260px; flex: none; border-right: 1px solid var(--border); padding: 14px 12px; overflow-y: auto; background: var(--surface); }
+aside h1 { font-size: 18px; margin: 0 0 12px; }
+aside h2 { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 18px 0 6px; }
+aside a { display: block; color: var(--text-2); text-decoration: none; padding: 4px 8px; border-radius: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+aside a:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+aside a.on { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--text); }
+aside .empty { color: var(--muted); font-size: 13px; padding: 4px 8px; }
+#main { flex: 1; display: flex; flex-direction: column; min-width: 0; height: 100%; }
+#head { display: flex; align-items: center; gap: 10px; padding: 12px 20px; border-bottom: 1px solid var(--border); min-height: 52px; }
+#head .title { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#body { flex: 1; overflow-y: auto; }
+#thread { max-width: 900px; margin: 0 auto; padding: 20px 20px 40px; }
+#composer { border-top: 1px solid var(--border); padding: 12px 20px; }
+#composer form { max-width: 900px; margin: 0 auto; display: flex; gap: 8px; align-items: flex-end; }
+textarea, input, select { font: inherit; font-size: 14px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; min-width: 0; }
+textarea { flex: 1; resize: none; min-height: 42px; max-height: 200px; }
+button { font: inherit; font-size: 13px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
+button:disabled { opacity: .45; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.link { border: none; background: none; color: var(--muted); padding: 2px 4px; }
+.user { margin: 22px 0 10px; display: flex; justify-content: flex-end; }
+.user div { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); border-radius: 12px; padding: 8px 14px; max-width: 80%; white-space: pre-wrap; overflow-wrap: anywhere; }
+.answer { margin: 10px 0; overflow-wrap: anywhere; }
+.answer p { margin: 0 0 8px; }
+.answer ul, .answer ol { margin: 0 0 8px; padding-left: 22px; }
+.answer h3, .answer h4 { margin: 12px 0 6px; font-size: 15px; }
+.answer code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+.answer pre { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px; overflow-x: auto; }
+.answer pre code { border: none; padding: 0; }
+.error { color: var(--critical-text); margin: 10px 0; }
+.waiting { color: var(--muted); margin: 10px 0; }
+.waiting::after { content: " …"; animation: blink 1.2s infinite; }
+@keyframes blink { 50% { opacity: .2; } }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin: 10px 0; min-width: 0; }
+.card .what { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--text-2); margin-bottom: 6px; }
+.card .what b { color: var(--text); font-weight: 600; }
+.card .what .ctl { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.card .what select { font-size: 12px; padding: 2px 6px; border-radius: 6px; }
+.card .note { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.tiles { display: flex; gap: 22px; flex-wrap: wrap; margin: 4px 0; }
+.tile .v { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tile .k { font-size: 12px; color: var(--muted); }
+.tool { font-size: 12px; color: var(--muted); margin: 4px 0; }
+.tool summary { cursor: pointer; }
+.tool pre { font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px; max-height: 300px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-2); }
+.table-wrap { overflow-x: auto; max-height: 360px; overflow-y: auto; margin-top: 6px; }
+table { border-collapse: collapse; font-size: 12px; width: 100%; }
+th { text-align: left; color: var(--text-2); font-weight: 600; border-bottom: 1px solid var(--axis); padding: 4px 8px; white-space: nowrap; position: sticky; top: 0; background: var(--surface); }
+td { border-bottom: 1px solid var(--grid); padding: 4px 8px; white-space: nowrap; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+svg text { fill: var(--muted); font-size: 11px; font-family: inherit; }
+svg .grid { stroke: var(--grid); }
+svg .axis { stroke: var(--axis); }
+.legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--text-2); margin-top: 4px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+.panel { max-width: 900px; margin: 0 auto; padding: 20px; }
+.panel label { display: block; font-size: 13px; color: var(--text-2); margin: 12px 0 4px; }
+.panel input[type=text], .panel textarea { width: 100%; }
+.panel .pick { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; border-bottom: 1px solid var(--grid); font-size: 13px; }
+.sub { color: var(--muted); font-size: 13px; }
+.intro { color: var(--text-2); max-width: 560px; margin: 60px auto; text-align: center; }
+@media (max-width: 760px) {
+  body { flex-direction: column; }
+  aside { width: auto; max-height: 34vh; border-right: none; border-bottom: 1px solid var(--border); }
+  #thread, #composer, #head { padding-left: 16px; padding-right: 16px; }
+}
+</style>
+</head>
+<body>
+<aside>
+  <h1>analyst</h1>
+  <button class="primary" id="new" style="width:100%">New conversation</button>
+  <h2>Reports</h2>
+  <div id="reports"></div>
+  <h2>Conversations</h2>
+  <div id="convs"></div>
+</aside>
+<div id="main">
+  <div id="head"></div>
+  <div id="body"><div id="thread"></div></div>
+  <div id="composer">
+    <form id="ask">
+      <textarea id="text" rows="1" placeholder="Ask about the data…  (Enter to send, Shift+Enter for a new line)"></textarea>
+      <button class="primary" id="send">Send</button>
+    </form>
+  </div>
+</div>
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const el = (tag, attrs = {}, ...kids) => {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") e.className = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else e.setAttribute(k, v);
+  }
+  for (const k of kids.flat()) if (k != null) e.append(k.nodeType ? k : String(k));
+  return e;
+};
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+async function api(method, path, body) {
+  const r = await fetch(path, { method, headers: { "Content-Type": "application/json", "X-Analyst": "1" }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+}
+
+// --- state and routing ----------------------------------------------------------
+let current = null; // {kind: "conv"|"report"|"save", id, ...}
+let cards = new Map(); // tool call id -> {call, result, view} in the open conversation
+let models = { models: [], default: "" };
+
+window.addEventListener("hashchange", route);
+async function route() {
+  const [kind, id] = location.hash.slice(1).split("/");
+  if (kind === "c" && id) return openConv(id);
+  if (kind === "r" && id) return openReport(id);
+  if (kind === "save" && id) return openSave(id);
+  current = null;
+  showNew();
+}
+
+async function refreshSide() {
+  const [convs, reps] = await Promise.all([api("GET", "/api/conversations"), api("GET", "/api/reports")]);
+  const side = (box, list, href, label) => {
+    box.replaceChildren(...(list.length ? list.map((x) => el("a", { href: href(x), title: label(x), class: location.hash === href(x) ? "on" : "" }, label(x))) : [el("div", { class: "empty" }, "none yet")]));
+  };
+  side($("#convs"), convs, (c) => "#c/" + c.id, (c) => c.title || "New conversation");
+  side($("#reports"), reps, (r) => "#r/" + r.id, (r) => r.title);
+}
+
+function setHead(...kids) { $("#head").replaceChildren(...kids); }
+function composer(on) { $("#composer").style.display = on ? "" : "none"; }
+
+function showNew() {
+  cards = new Map();
+  const pick = models.models.length > 1
+    ? el("select", { id: "model" }, models.models.map((m) => { const o = el("option", { value: m }, m); if (m === models.default) o.selected = true; return o; }))
+    : null;
+  setHead(el("span", { class: "title" }, "New conversation"), pick);
+  $("#thread").replaceChildren(el("div", { class: "intro" },
+    el("p", {}, "Ask a question about the data. The answers come from the semantic layer only: every query is shown with its rows and a chart."),
+    el("p", { class: "sub" }, "Happy with an analysis? Save it as a report, and run its queries again on the latest data whenever you like.")));
+  composer(true);
+  refreshSide();
+  $("#text").focus();
+}
+
+// --- conversations --------------------------------------------------------------
+async function openConv(id) {
+  let c;
+  try { c = await api("GET", "/api/conversations/" + id); } catch (e) { return showError(e); }
+  current = { kind: "conv", id, title: c.title };
+  cards = new Map();
+  convHead(c.title);
+  const t = $("#thread");
+  t.replaceChildren();
+  for (const item of c.items) addItem(item);
+  composer(true);
+  refreshSide();
+  scrollDown();
+  if (c.busy) pollBusy(id);
+}
+
+function convHead(title) {
+  setHead(el("span", { class: "title" }, title || "New conversation"),
+    el("button", { onclick: () => (location.hash = "#save/" + current.id) }, "Save as report"),
+    el("button", { class: "link", title: "Delete this conversation", onclick: deleteConv }, "Delete"));
+}
+
+async function deleteConv() {
+  if (!confirm("Delete this conversation? Reports saved from it are kept.")) return;
+  try { await api("DELETE", "/api/conversations/" + current.id); location.hash = ""; } catch (e) { alert(e.message); }
+}
+
+async function pollBusy(id) {
+  const w = el("div", { class: "waiting" }, "Still answering");
+  $("#thread").append(w);
+  while (current && current.id === id) {
+    await new Promise((r) => setTimeout(r, 3000));
+    const c = await api("GET", "/api/conversations/" + id).catch(() => null);
+    if (c && !c.busy) { if (current && current.id === id) openConv(id); return; }
+  }
+}
+
+// addItem shows one event of a conversation, stored or live.
+function addItem(item, live) {
+  const t = $("#thread");
+  switch (item.type) {
+    case "user": t.append(el("div", { class: "user" }, el("div", {}, item.text))); break;
+    case "text": { const d = el("div", { class: "answer" }); d.innerHTML = markdown(item.text); t.append(d); break; }
+    case "error": t.append(el("div", { class: "error" }, item.text)); break;
+    case "call": {
+      const c = { call: item, result: null, view: { type: "auto", measure: "" }, box: el("div") };
+      cards.set(item.id, c);
+      t.append(c.box);
+      renderCard(c);
+      break;
+    }
+    case "result": {
+      const c = cards.get(item.id);
+      if (c) { c.result = item; renderCard(c); }
+      break;
+    }
+  }
+  if (live) scrollDown();
+}
+
+function scrollDown() { const b = $("#body"); b.scrollTop = b.scrollHeight; }
+
+$("#text").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("#ask").requestSubmit(); }
+});
+$("#text").addEventListener("input", (e) => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + 2 + "px"; });
+$("#new").addEventListener("click", () => { location.hash = ""; route(); });
+
+$("#ask").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = $("#text").value.trim();
+  if (!text) return;
+  $("#send").disabled = true;
+  try {
+    if (!current || current.kind !== "conv") {
+      const m = $("#model");
+      const c = await api("POST", "/api/conversations", { model: m ? m.value : "" });
+      history.replaceState(null, "", "#c/" + c.id);
+      current = { kind: "conv", id: c.id };
+      cards = new Map();
+      convHead("");
+      $("#thread").replaceChildren();
+    }
+    $("#text").value = "";
+    $("#text").style.height = "auto";
+    await send(current.id, text);
+  } catch (err) {
+    $("#thread").append(el("div", { class: "error" }, err.message));
+  } finally {
+    $("#send").disabled = false;
+  }
+});
+
+// send posts a question and shows the turn's events as they arrive.
+async function send(id, text) {
+  addItem({ type: "user", text }, true);
+  const w = el("div", { class: "waiting" }, "Thinking");
+  $("#thread").append(w);
+  scrollDown();
+  const r = await fetch("/api/conversations/" + id + "/messages", { method: "POST", headers: { "Content-Type": "application/json", "X-Analyst": "1" }, body: JSON.stringify({ text }) });
+  if (!r.ok) { w.remove(); const d = await r.json().catch(() => ({})); throw new Error(d.error || r.statusText); }
+  const reader = r.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, i);
+      buf = buf.slice(i + 1);
+      if (!line.trim()) continue;
+      const ev = JSON.parse(line);
+      if (current && current.id !== id) continue; // the page moved on; the turn still runs
+      if (ev.type === "done") { w.remove(); continue; }
+      w.remove();
+      addItem(ev, true);
+      if (ev.type !== "error") { $("#thread").append(w); w.textContent = ev.type === "call" ? "Querying" : "Thinking"; }
+      scrollDown();
+    }
+  }
+  w.remove();
+  refreshSide();
+  if (current && current.id === id) {
+    const c = await api("GET", "/api/conversations/" + id).catch(() => null);
+    if (c) { current.title = c.title; convHead(c.title); }
+  }
+}
+
+// --- query cards ----------------------------------------------------------------
+const DATA_TOOLS = /__(query_model|compare_periods)$/;
+const shortName = (n) => n.replace(/^[a-z0-9-]+__/, "");
+
+function parseArgs(a) { return a && typeof a === "object" ? a : {}; }
+function parseResult(text) { try { return JSON.parse(text); } catch { return null; } }
+
+// describe sums up a query's arguments in a line.
+function describe(name, a) {
+  const parts = [];
+  if (a.measures) parts.push((a.measures || []).join(", "));
+  if (a.dimensions && a.dimensions.length) parts.push("by " + a.dimensions.join(", "));
+  if (a.time_grain) parts.push("per " + a.time_grain.replace(/^TIME_GRAIN_/, "").toLowerCase());
+  if (a.filters && a.filters.length) parts.push("filtered");
+  if (a.time_range) parts.push((a.time_range.start || "…") + " → " + (a.time_range.end || "…"));
+  if (a.current_time_range) parts.push(`${a.current_time_range.start}–${a.current_time_range.end} vs ${a.previous_time_range?.start}–${a.previous_time_range?.end}`);
+  if (a.limit) parts.push("top " + a.limit);
+  return parts.join(" · ");
+}
+
+function renderCard(c) {
+  const name = c.call.name, args = parseArgs(c.call.args);
+  if (!DATA_TOOLS.test(name)) {
+    // Looking around (list_models, get_model, ...): a quiet line.
+    const label = shortName(name) + (args.model_name ? " " + args.model_name : "") + (args.dimension_name ? " " + args.dimension_name : "");
+    const body = c.result ? (c.result.error ? "Error: " : "") + pretty(c.result.text) : "running…";
+    c.box.replaceChildren(el("details", { class: "tool" }, el("summary", {}, label, c.result?.error ? " (failed)" : ""), el("pre", {}, body)));
+    return;
+  }
+  const card = el("div", { class: "card" });
+  const what = el("div", { class: "what" }, el("b", {}, args.model_name || shortName(name)), el("span", {}, describe(name, args)));
+  card.append(what);
+  if (!c.result) { card.append(el("div", { class: "waiting" }, "Running")); c.box.replaceChildren(card); return; }
+  const res = parseResult(c.result.text);
+  if (c.result.error || !res || !Array.isArray(res.records)) {
+    card.append(el("div", { class: "error" }, res && res.error ? String(res.error) : c.result.text));
+    c.box.replaceChildren(card);
+    return;
+  }
+  drawResult(card, what, res, args, c.view, () => renderCard(c));
+  c.box.replaceChildren(card);
+}
+
+function pretty(text) { const v = parseResult(text); return v === null ? text : JSON.stringify(v, null, 2); }
+
+// drawResult shows rows as tiles (one row), or a chart and a table.
+function drawResult(card, what, res, args, view, redraw) {
+  const rows = res.records, cols = res.columns || Object.keys(rows[0] || {});
+  const dims = (args.dimensions || []).filter((d) => cols.includes(d));
+  const nums = cols.filter((k) => !dims.includes(k) && rows.length && rows.every((r) => r[k] === null || typeof r[k] === "number"));
+  if (!view.measure || !nums.includes(view.measure)) view.measure = nums[0] || "";
+
+  if (rows.length === 1 && !dims.length) {
+    card.append(el("div", { class: "tiles" }, nums.map((k) => el("div", { class: "tile" }, el("div", { class: "v" }, fmt(rows[0][k])), el("div", { class: "k" }, k)))));
+  } else if (rows.length >= 2 && dims.length && view.measure) {
+    const ctl = el("span", { class: "ctl" });
+    const typeSel = el("select", { onchange: (e) => { view.type = e.target.value; redraw(); } },
+      ["auto", "bar", "line", "table"].map((t) => { const o = el("option", { value: t }, t === "auto" ? "chart: auto" : t); if (t === view.type) o.selected = true; return o; }));
+    ctl.append(typeSel);
+    if (nums.length > 1) {
+      ctl.append(el("select", { onchange: (e) => { view.measure = e.target.value; redraw(); } },
+        nums.map((k) => { const o = el("option", { value: k }, k); if (k === view.measure) o.selected = true; return o; })));
+    }
+    what.append(ctl);
+    if (view.type !== "table") card.append(chart(rows, dims, view.measure, view.type));
+  }
+  const shown = rows.slice(0, 500);
+  const table = el("table", {}, el("thead", {}, el("tr", {}, cols.map((k) => el("th", { class: nums.includes(k) ? "num" : "" }, k)))),
+    el("tbody", {}, shown.map((r) => el("tr", {}, cols.map((k) => el("td", { class: nums.includes(k) ? "num" : "" }, cell(r[k])))))));
+  const wrap = el("div", { class: "table-wrap" }, table);
+  if (view.type === "table" || rows.length <= 1 || !dims.length) card.append(wrap);
+  else card.append(el("details", {}, el("summary", { class: "sub" }, `${rows.length} rows`), wrap));
+  const total = res.total_rows ?? rows.length;
+  if (total > shown.length) card.append(el("div", { class: "note" }, `showing ${shown.length} of ${total} rows`));
+}
+
+const isDate = (v) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v);
+function cell(v) { if (v === null || v === undefined) return "–"; if (typeof v === "number") return fmt(v); if (isDate(v)) return v.replace(/T00:00:00(\.0+)?Z?$/, ""); return String(v); }
+function fmt(v) { if (v === null || v === undefined) return "–"; return typeof v === "number" ? v.toLocaleString(undefined, { maximumFractionDigits: Math.abs(v) < 10 ? 2 : 0 }) : String(v); }
+const compact = new Intl.NumberFormat(undefined, { notation: "compact", maximumSignificantDigits: 3 });
+function label(v) { return isDate(v) ? v.slice(0, 10) : String(v ?? "–"); }
+
+// --- charts ---------------------------------------------------------------------
+// chart draws one measure by a dimension (the time one if there is one), as
+// bars or lines, with another dimension (if any) as series. "auto" is a line over time, bars
+// otherwise.
+function chart(rows, dims, measure, type) {
+  // A time dimension is always the x axis.
+  const x = dims.find((d) => rows.every((r) => isDate(r[d]))) || dims[0];
+  const s = dims.find((d) => d !== x);
+  const time = rows.every((r) => isDate(r[x]));
+  if (type === "auto") type = time ? "line" : "bar";
+  const maxSeries = type === "line" ? 8 : 6;
+
+  // Series, biggest first; the rest are left out (and said so).
+  const totals = new Map();
+  for (const r of rows) { const k = s ? String(r[s]) : measure; totals.set(k, (totals.get(k) || 0) + (Math.abs(r[measure]) || 0)); }
+  const series = [...totals.keys()].sort((a, b) => totals.get(b) - totals.get(a)).slice(0, maxSeries);
+  let xs = [];
+  const seen = new Set();
+  for (const r of rows) { const k = String(r[x]); if (!seen.has(k)) { seen.add(k); xs.push(k); } }
+  if (time) xs.sort();
+  const maxX = type === "bar" ? 40 : 400;
+  const cutX = xs.length > maxX;
+  xs = xs.slice(0, maxX);
+  const val = new Map();
+  for (const r of rows) val.set(String(r[x]) + "\u0000" + (s ? String(r[s]) : measure), r[measure]);
+  const get = (xk, sk) => val.get(xk + "\u0000" + sk);
+
+  let lo = 0, hi = 0;
+  for (const xk of xs) for (const sk of series) { const v = get(xk, sk); if (typeof v === "number") { lo = Math.min(lo, v); hi = Math.max(hi, v); } }
+  if (hi === lo) hi = lo + 1;
+  const ticks = niceTicks(lo, hi);
+  lo = ticks[0]; hi = ticks[ticks.length - 1];
+
+  const W = 860, rotate = type === "bar" && !time && xs.some((k) => k.length > 6);
+  const H = 300, L = 56, R = 12, T = 10, B = rotate ? 96 : 28;
+  const pw = W - L - R, ph = H - T - B;
+  const yOf = (v) => T + ph - ((v - lo) / (hi - lo)) * ph;
+  const colors = series.map((_, i) => `var(--s${(i % 8) + 1})`);
+  let g = "";
+  for (const t of ticks) g += `<line class="grid" x1="${L}" x2="${W - R}" y1="${yOf(t)}" y2="${yOf(t)}"/><text x="${L - 6}" y="${yOf(t) + 4}" text-anchor="end">${esc(compact.format(t))}</text>`;
+  g += `<line class="axis" x1="${L}" x2="${W - R}" y1="${yOf(0)}" y2="${yOf(0)}"/>`;
+
+  const step = pw / Math.max(xs.length, 1);
+  const every = Math.ceil(xs.length / (rotate ? 40 : 12));
+  xs.forEach((xk, i) => {
+    if (i % every) return;
+    const cx = L + step * i + step / 2, y = H - B + 14, t = label(xk);
+    const text = t.length > 16 ? t.slice(0, 15) + "…" : t;
+    g += rotate ? `<text transform="translate(${cx},${y - 6}) rotate(-45)" text-anchor="end">${esc(text)}</text>` : `<text x="${cx}" y="${y}" text-anchor="middle">${esc(text)}</text>`;
+  });
+
+  if (type === "bar") {
+    const bw = Math.max(1, (step * 0.8) / series.length);
+    xs.forEach((xk, i) => series.forEach((sk, j) => {
+      const v = get(xk, sk);
+      if (typeof v !== "number") return;
+      const bx = L + step * i + step * 0.1 + bw * j, y0 = yOf(0), y1 = yOf(v);
+      g += `<rect x="${bx}" y="${Math.min(y0, y1)}" width="${bw}" height="${Math.max(1, Math.abs(y1 - y0))}" fill="${colors[j]}" rx="1"><title>${esc(label(xk))}${s ? " · " + esc(sk) : ""}: ${esc(fmt(v))}</title></rect>`;
+    }));
+  } else {
+    series.forEach((sk, j) => {
+      let d = "", pts = "";
+      xs.forEach((xk, i) => {
+        const v = get(xk, sk);
+        if (typeof v !== "number") return;
+        const px = L + step * i + step / 2, py = yOf(v);
+        d += (d ? "L" : "M") + px.toFixed(1) + " " + py.toFixed(1);
+        pts += `<circle cx="${px}" cy="${py}" r="${xs.length > 60 ? 0 : 2.5}" fill="${colors[j]}"><title>${esc(label(xk))}${s ? " · " + esc(sk) : ""}: ${esc(fmt(v))}</title></circle>`;
+      });
+      g += `<path d="${d}" fill="none" stroke="${colors[j]}" stroke-width="2"/>` + pts;
+    });
+  }
+  const box = el("div");
+  box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(measure)} by ${esc(x)}">${g}</svg>`;
+  if (s) box.append(el("div", { class: "legend" }, series.map((sk, j) => el("span", {}, el("i", { style: `background:${colors[j]}` }), sk))));
+  const left = totals.size - series.length;
+  const notes = [];
+  if (left > 0) notes.push(`${left} more ${s} not drawn`);
+  if (cutX) notes.push(`first ${maxX} ${x} drawn`);
+  if (notes.length) box.append(el("div", { class: "note" }, notes.join("; ")));
+  return box;
+}
+
+function niceTicks(lo, hi) {
+  const span = hi - lo, raw = span / 5, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => span / s <= 6);
+  const out = [];
+  for (let v = Math.floor(lo / step) * step; v <= Math.ceil(hi / step) * step + step / 2; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+
+// --- markdown (the little the answers use) ----------------------------------------
+function markdown(src) {
+  const inline = (s) => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<i>$2</i>");
+  const lines = src.replace(/\r/g, "").split("\n");
+  let out = "", list = null, para = [];
+  const flush = () => { if (para.length) { out += "<p>" + para.map(inline).join("<br>") + "</p>"; para = []; } if (list) { out += `</${list}>`; list = null; } };
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    if (/^```/.test(l)) {
+      flush();
+      const code = [];
+      while (++i < lines.length && !/^```/.test(lines[i])) code.push(lines[i]);
+      out += "<pre><code>" + esc(code.join("\n")) + "</code></pre>";
+      continue;
+    }
+    if (/^\s*\|.*\|\s*$/.test(l)) {
+      flush();
+      const rows = [];
+      for (; i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i]); i++) rows.push(lines[i]);
+      i--;
+      const cells = (r) => r.trim().slice(1, -1).split("|").map((c) => c.trim());
+      const body = rows.filter((r) => !/^\s*\|[\s:|-]+\|\s*$/.test(r));
+      out += '<div class="table-wrap"><table><thead><tr>' + cells(body[0]).map((c) => "<th>" + inline(c) + "</th>").join("") + "</tr></thead><tbody>" +
+        body.slice(1).map((r) => "<tr>" + cells(r).map((c) => "<td>" + inline(c) + "</td>").join("") + "</tr>").join("") + "</tbody></table></div>";
+      continue;
+    }
+    let m;
+    if ((m = /^(#{1,4})\s+(.*)/.exec(l))) { flush(); const h = m[1].length <= 2 ? "h3" : "h4"; out += `<${h}>${inline(m[2])}</${h}>`; continue; }
+    if ((m = /^\s*([-*]|\d+\.)\s+(.*)/.exec(l))) {
+      const kind = /\d/.test(m[1]) ? "ol" : "ul";
+      if (para.length) { const l2 = list; list = null; flush(); list = l2; }
+      if (list !== kind) { if (list) out += `</${list}>`; out += `<${kind}>`; list = kind; }
+      out += "<li>" + inline(m[2]) + "</li>";
+      continue;
+    }
+    if (!l.trim()) { flush(); continue; }
+    if (list) { out += `</${list}>`; list = null; }
+    para.push(l);
+  }
+  flush();
+  return out;
+}
+
+// --- saving a report ------------------------------------------------------------
+async function openSave(id) {
+  if (!current || current.id !== id || !cards.size) await openConv(id);
+  const picks = [...cards.values()].filter((c) => DATA_TOOLS.test(c.call.name) && c.result && !c.result.error);
+  current = { kind: "save", id, title: current.title };
+  setHead(el("span", { class: "title" }, "Save as report"), el("button", { onclick: () => (location.hash = "#c/" + id) }, "Back to the conversation"));
+  composer(false);
+  const p = el("div", { class: "panel" });
+  if (!picks.length) {
+    p.append(el("p", {}, "This conversation has no queries that worked yet, so there is nothing to save."));
+    $("#thread").replaceChildren(p);
+    return;
+  }
+  const title = el("input", { type: "text", value: current.title || "" });
+  const notes = el("textarea", { rows: "3", placeholder: "What this report answers, how to read it (optional)" });
+  const boxes = picks.map((c) => {
+    const box = el("input", { type: "checkbox" });
+    box.checked = true;
+    const a = parseArgs(c.call.args);
+    return { c, box, row: el("label", { class: "pick" }, box, el("span", {}, el("b", {}, a.model_name || ""), " ", describe(c.call.name, a), el("div", { class: "sub" }, `chart: ${c.view.type}${c.view.measure ? ", " + c.view.measure : ""}`))) };
+  });
+  const err = el("div", { class: "error" });
+  const save = el("button", { class: "primary", onclick: async () => {
+    const steps = boxes.filter((b) => b.box.checked).map((b) => ({ call: b.c.call.id, chart: { type: b.c.view.type, measure: b.c.view.measure } }));
+    try {
+      const r = await api("POST", "/api/reports", { title: title.value, notes: notes.value, conversation: id, steps });
+      location.hash = "#r/" + r.id;
+    } catch (e) { err.textContent = e.message; }
+  } }, "Save report");
+  p.append(el("label", {}, "Title"), title, el("label", {}, "Notes"), notes,
+    el("label", {}, "Queries to run again (each as it was asked, with the chart as it is set now)"), boxes.map((b) => b.row),
+    el("p", { class: "sub" }, "A report runs these queries directly against the semantic layer, without the model, so it gives the same analysis on the latest data."),
+    el("div", {}, save), err);
+  $("#thread").replaceChildren(p);
+}
+
+// --- reports --------------------------------------------------------------------
+async function openReport(id) {
+  let rep;
+  try { rep = await api("GET", "/api/reports/" + id); } catch (e) { return showError(e); }
+  current = { kind: "report", id };
+  cards = new Map();
+  composer(false);
+  const ran = el("span", { class: "sub" });
+  const run = el("button", { class: "primary", onclick: () => runReport(rep, ran, run) }, "Run again");
+  setHead(el("span", { class: "title" }, rep.title), ran, run,
+    rep.conversation ? el("button", { onclick: () => (location.hash = "#c/" + rep.conversation) }, "Conversation") : null,
+    el("button", { class: "link", onclick: async () => {
+      if (!confirm("Delete this report?")) return;
+      try { await api("DELETE", "/api/reports/" + id); location.hash = ""; } catch (e) { alert(e.message); }
+    } }, "Delete"));
+  const t = $("#thread");
+  t.replaceChildren();
+  if (rep.notes) { const d = el("div", { class: "answer" }); d.innerHTML = markdown(rep.notes); t.append(d); }
+  rep.steps.forEach((s, i) => {
+    const view = Object.assign({ type: "auto", measure: "" }, s.chart || {});
+    const c = { call: { id: "step" + i, name: s.tool, args: s.args }, result: null, view, box: el("div") };
+    cards.set(c.call.id, c);
+    t.append(c.box);
+    renderCard(c);
+  });
+  refreshSide();
+  runReport(rep, ran, run);
+}
+
+async function runReport(rep, ran, btn) {
+  btn.disabled = true;
+  ran.textContent = "running…";
+  for (const c of cards.values()) { c.result = null; renderCard(c); }
+  try {
+    const out = await api("POST", "/api/reports/" + rep.id + "/run");
+    out.results.forEach((r, i) => { const c = cards.get("step" + i); if (c) { c.result = r; renderCard(c); } });
+    ran.textContent = "data as of " + new Date(out.ran).toLocaleString();
+  } catch (e) {
+    ran.textContent = "";
+    for (const c of cards.values()) { c.result = { text: e.message, error: true }; renderCard(c); }
+  } finally { btn.disabled = false; }
+}
+
+function showError(e) {
+  current = null;
+  setHead(el("span", { class: "title" }, "Not found"));
+  $("#thread").replaceChildren(el("div", { class: "error" }, e.message));
+  composer(false);
+  refreshSide();
+}
+
+api("GET", "/api/models").then((m) => { models = m; }).catch(() => {}).finally(route);
+</script>
+</body>
+</html>

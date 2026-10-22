@@ -13,9 +13,11 @@
 #   garage-ui      garage-ui/deploy.sh
 #   lake-ui        lake-ui/deploy.sh               after ducklake: reads its catalog settings
 #   lakeshape      lakeshape/deploy.sh             after ducklake: builds ../analytics into the lake
+#   semantic       semantic/deploy.sh              MCP server over the marts; after lakeshape
 #   url-to-bucket  url-to-bucket/deploy.sh         service; after relay: takes download requests from it
-#   mcp-hub        mcp-hub/deploy.sh               MCP gateway; after vigil: copies its MCP token
+#   mcp-hub        mcp-hub/deploy.sh               MCP gateway; after vigil and semantic: copies their MCP tokens
 #   foreman        foreman/deploy.sh               agents; after mcp-hub: copies its token
+#   analyst        analyst/deploy.sh               chat over the semantic layer; after mcp-hub: copies its token
 #   home           home/deploy.sh                  homepage linking the UIs above
 #   llama *        linux-scripts/llama-setup.sh    pulls and rebuilds llama.cpp (slow)
 #
@@ -25,7 +27,7 @@
 #   ONLY=llama ./deploy-all.sh
 #
 # Before anything is touched on the server, every Go app in the selected
-# steps is vetted, tested and built locally, so a broken build stops the run
+# steps is vetted, tested and built locally (semantic, in Python, is tested), so a broken build stops the run
 # instead of leaving the server half updated. After the last step, a status
 # check runs on the server.
 #
@@ -48,7 +50,7 @@ SSH_PORT="${SSH_PORT:-2222}"
 ONLY="${ONLY:-}"
 SKIP="${SKIP:-}"
 
-ORDER=(garage relay vigil duckpipe ducklake garage-ui lake-ui lakeshape url-to-bucket mcp-hub foreman home llama)
+ORDER=(garage relay vigil duckpipe ducklake garage-ui lake-ui lakeshape semantic url-to-bucket mcp-hub foreman analyst home llama)
 OPT_IN=(duckpipe llama)   # skipped unless named in ONLY
 
 log() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
@@ -70,9 +72,11 @@ vars() {
     garage-ui) echo "LISTEN BUCKETS KEY_NAME UI_USER ENDPOINT" ;;
     lake-ui) echo "LISTEN LAKE_BUCKET KEY_NAME PG_ROLE UI_USER ENDPOINT" ;;
     lakeshape) echo "PROJECT LAKE_BUCKET KEY_NAME ENDPOINT DUCKDB_VERSION" ;;
+    semantic) echo "LISTEN LAKE_BUCKET KEY_NAME PG_ROLE ENDPOINT" ;;
     url-to-bucket) echo "BUCKETS KEY_NAME WORKERS ENDPOINT LISTEN UI_USER" ;;
     mcp-hub) echo "LISTEN EXTRA_ARGS" ;;
     foreman) echo "LISTEN EXTRA_ARGS" ;;
+    analyst) echo "LISTEN EXTRA_ARGS" ;;
     home) echo "LISTEN SERVICES" ;;
     llama) echo "REF MODEL_REPO MODEL_FILE HOST PORT API_KEY CTX THREADS" ;;
   esac
@@ -120,10 +124,16 @@ done
 log "Deploying to $HOST: ${steps[*]}"
 
 # --- Preflight: vet, test and build every Go app locally ---------------------
+# semantic is the one Python app: its tests run with uv instead.
 command -v go >/dev/null || die "go is required"
 for s in "${steps[@]}"; do
   [[ -n $(setup_script "$s") ]] && continue
   log "Checking $s"
+  if [[ -f $s/pyproject.toml ]]; then
+    command -v uv >/dev/null || die "uv is required for $s"
+    (cd "$s" && uv run -q --frozen pytest -q) || die "$s's tests fail; nothing was deployed"
+    continue
+  fi
   (cd "$s" && go vet ./... && go test -count=1 ./... && go build -o /dev/null .) || die "$s does not build or its tests fail; nothing was deployed"
 done
 
@@ -162,12 +172,12 @@ done
 log "Status on $HOST"
 ssh -p "$SSH_PORT" "$HOST" 'bash -s' <<'EOF'
 row() { printf '  %-14s %s\n' "$1" "$2"; }
-for u in garage vigil relay url-to-bucket mcp-hub foreman duckpipe lakeshape postgresql garage-ui lake-ui home llama-server; do
+for u in garage vigil relay url-to-bucket mcp-hub foreman analyst duckpipe lakeshape semantic postgresql garage-ui lake-ui home llama-server; do
   state=$(systemctl is-active "$u" 2>/dev/null)
   systemctl cat "$u" >/dev/null 2>&1 || state="not installed"
   row "$u" "$state"
 done
-for h in vigil:8090 relay:8091 url-to-bucket:8093 mcp-hub:8094 foreman:8096 home:8000; do
+for h in vigil:8090 relay:8091 url-to-bucket:8093 mcp-hub:8094 foreman:8096 semantic:8097 analyst:8098 home:8000; do
   curl -fsS -m 3 "http://127.0.0.1:${h#*:}/healthz" >/dev/null 2>&1 && row "${h%%:*} health" ok || row "${h%%:*} health" FAILED
 done
 EOF

@@ -1,0 +1,37 @@
+# Semantic models over the lake's marts (../analytics/models/marts), in the
+# Boring Semantic Layer's YAML format:
+# https://github.com/boringdata/boring-semantic-layer
+# Every table in the marts schema can be named in `table`.
+
+price_paid_monthly:
+  table: price_paid_monthly
+  description: >-
+    HM Land Registry residential sales in England and Wales, per month,
+    district and property type. Standard price paid transactions only
+    (category A): repossessions, buy-to-lets and sales to companies are
+    left out.
+  dimensions:
+    month:
+      expr: _.month
+      description: First day of the month the sale completed
+      is_time_dimension: true
+      smallest_time_grain: TIME_GRAIN_MONTH
+    district:
+      expr: _.district
+      description: Local authority district, upper case (e.g. CITY OF WESTMINSTER)
+    property_type:
+      expr: _.property_type
+      description: "D detached, S semi-detached, T terraced, F flat or maisonette, O other"
+  measures:
+    sales:
+      expr: _.sales.sum()
+      description: Number of sales
+    total_value:
+      expr: (_.avg_price * _.sales).sum()
+      description: Total paid for all sales, in GBP (from monthly averages rounded to the pound)
+  calculated_measures:
+    avg_price:
+      expr: _.total_value / _.sales
+      description: >-
+        Average price paid, in GBP. There is no median measure: the mart's
+        monthly medians can't be combined into a median of a larger group.

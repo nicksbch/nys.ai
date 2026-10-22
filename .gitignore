@@ -3,6 +3,7 @@ deploy.env
 
 # Binaries from a local `go build` in each app directory
 /duckpipe/duckpipe
+/analyst/analyst
 /foreman/foreman
 /garage-ui/garage-ui
 /home/home

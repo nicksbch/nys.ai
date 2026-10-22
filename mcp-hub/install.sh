@@ -11,7 +11,7 @@
 # Safe to re-run: the binary, servers.json (from the repo) and the unit are
 # replaced and the service restarted. servers.json is checked first: if it
 # doesn't load, nothing is changed. An existing /etc/mcp-hub.env is left
-# untouched, apart from adding vigil's MCP token that it lacks.
+# untouched, apart from adding the vigil and semantic MCP tokens that it lacks.
 
 set -euo pipefail
 
@@ -24,7 +24,6 @@ BIN=/usr/local/bin/mcp-hub                # also the CLI (mcp-hub check)
 ENV_FILE=/etc/mcp-hub.env                 # hub token and upstream tokens, root only
 CONFIG=/etc/mcp-hub/servers.json          # upstream servers and profiles, no secrets
 UNIT=/etc/systemd/system/mcp-hub.service
-VIGIL_ENV=/etc/vigil.env
 
 log() { printf '\n==> %s\n' "$*"; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
@@ -52,12 +51,15 @@ MCP_HUB_TOKEN=$new_token
 EOF
   umask 022
 fi
-# vigil is the first upstream: copy its MCP token if vigil has one.
-vigil_token=$(sed -n 's/^VIGIL_MCP_TOKEN=//p' "$VIGIL_ENV" 2>/dev/null || true)
-if [[ -n $vigil_token ]] && ! grep -q '^VIGIL_MCP_TOKEN=' "$ENV_FILE"; then
-  log "Adding vigil's MCP token to $ENV_FILE"
-  echo "VIGIL_MCP_TOKEN=$vigil_token" >>"$ENV_FILE"
-fi
+# Copy the MCP tokens of the upstreams installed on this server.
+for app in vigil semantic; do
+  var="$(tr a-z A-Z <<<"$app")_MCP_TOKEN"
+  token=$(sed -n "s/^$var=//p" "/etc/$app.env" 2>/dev/null || true)
+  if [[ -n $token ]] && ! grep -q "^$var=" "$ENV_FILE"; then
+    log "Adding $app's MCP token to $ENV_FILE"
+    echo "$var=$token" >>"$ENV_FILE"
+  fi
+done
 chown root:root "$ENV_FILE"
 chmod 0600 "$ENV_FILE"
 
@@ -87,7 +89,7 @@ log "Installing $UNIT"
 cat >"$UNIT" <<EOF
 [Unit]
 Description=mcp-hub - one MCP endpoint for every service
-After=network-online.target vigil.service relay.service
+After=network-online.target vigil.service relay.service semantic.service
 Wants=network-online.target
 
 [Service]

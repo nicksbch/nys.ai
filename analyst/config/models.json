@@ -1,0 +1,6 @@
+{
+  "default": "local",
+  "models": {
+    "local": {"url": "http://127.0.0.1:8081/v1", "model": "local", "max_tokens": 4096}
+  }
+}

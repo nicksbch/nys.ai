@@ -1,8 +1,10 @@
 {
   "servers": [
-    {"name": "vigil", "url": "http://127.0.0.1:8090/mcp", "token_env": "VIGIL_MCP_TOKEN"}
+    {"name": "vigil", "url": "http://127.0.0.1:8090/mcp", "token_env": "VIGIL_MCP_TOKEN"},
+    {"name": "semantic", "url": "http://127.0.0.1:8097/mcp", "token_env": "SEMANTIC_MCP_TOKEN"}
   ],
   "profiles": {
-    "oncall": {"servers": ["vigil"], "allow": ["vigil__list_events", "vigil__get_run", "vigil__list_jobs", "vigil__list_alerts"]}
+    "oncall": {"servers": ["vigil"], "allow": ["vigil__list_events", "vigil__get_run", "vigil__list_jobs", "vigil__list_alerts"]},
+    "analyst": {"servers": ["semantic"]}
   }
 }

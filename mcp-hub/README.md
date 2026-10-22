@@ -34,13 +34,14 @@ plug in is under "Contract for an upstream server" there.
 
 ## Run it locally
 
-With vigil running locally (`./vigil -mcp-token vt`, see [vigil](../vigil)),
-the repo's `servers.json` works as is:
+With vigil and semantic running locally (`./vigil -mcp-token vt`, see
+[vigil](../vigil); `uv run python server.py serve -token st`, see
+[semantic](../semantic)), the repo's `servers.json` works as is:
 
 ```sh
 go build -o mcp-hub .
-VIGIL_MCP_TOKEN=vt ./mcp-hub check -config servers.json
-VIGIL_MCP_TOKEN=vt MCP_HUB_TOKEN=dev ./mcp-hub serve -config servers.json   # then: curl http://127.0.0.1:8094/
+VIGIL_MCP_TOKEN=vt SEMANTIC_MCP_TOKEN=st ./mcp-hub check -config servers.json
+VIGIL_MCP_TOKEN=vt SEMANTIC_MCP_TOKEN=st MCP_HUB_TOKEN=dev ./mcp-hub serve -config servers.json   # then: curl http://127.0.0.1:8094/
 ```
 
 ## servers.json
