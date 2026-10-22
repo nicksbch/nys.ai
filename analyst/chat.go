@@ -145,6 +145,35 @@ func items(c *Conversation) []event {
 	return out
 }
 
+// rewind drops the conversation from its n-th question (from 0) on, with
+// the results of the tool calls it drops, so that question can be asked
+// again differently. It reports false if there is no such question.
+func (c *Conversation) rewind(n int) bool {
+	if n < 0 {
+		return false
+	}
+	for i, m := range c.Messages {
+		if m.Role != "user" {
+			continue
+		}
+		if n > 0 {
+			n--
+			continue
+		}
+		for _, m := range c.Messages[i:] {
+			for _, tc := range m.ToolCalls {
+				delete(c.Results, tc.ID)
+			}
+		}
+		c.Messages = c.Messages[:i]
+		if i == 0 {
+			c.Title = "" // the edited question names it
+		}
+		return true
+	}
+	return false
+}
+
 // title is the start of the first question.
 func title(text string) string {
 	t := strings.Join(strings.Fields(text), " ")

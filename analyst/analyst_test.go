@@ -134,7 +134,13 @@ func call(t *testing.T, srv *httptest.Server, method, path, body string, out any
 // ask sends a question and returns the turn's events.
 func ask(t *testing.T, srv *httptest.Server, conv, text string) []event {
 	t.Helper()
-	req, _ := http.NewRequest("POST", srv.URL+"/api/conversations/"+conv+"/messages", strings.NewReader(`{"text":`+mustJSON(text)+`}`))
+	return send(t, srv, conv, `{"text":`+mustJSON(text)+`}`)
+}
+
+// send posts a message body and returns the turn's events.
+func send(t *testing.T, srv *httptest.Server, conv, body string) []event {
+	t.Helper()
+	req, _ := http.NewRequest("POST", srv.URL+"/api/conversations/"+conv+"/messages", strings.NewReader(body))
 	req.Header.Set("X-Analyst", "1")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -254,6 +260,49 @@ func TestConversationSaveAndRun(t *testing.T) {
 	model.mu.Unlock()
 	if after != before {
 		t.Errorf("running a report called the model")
+	}
+}
+
+func TestEditQuestion(t *testing.T) {
+	hub := newFakeHub(t)
+	model := newFakeModel(t,
+		textResp("Leeds."),
+		toolCallResp("semantic__query_model", `{"model_name": "price_paid_monthly", "measures": ["sales"]}`),
+		textResp("Up."),
+		textResp("Flat."),
+		textResp("York."),
+	)
+	a, srv := newTestApp(t, model, hub)
+	var c struct{ ID string }
+	call(t, srv, "POST", "/api/conversations", `{}`, &c)
+	ask(t, srv, c.ID, "Where?")
+	ask(t, srv, c.ID, "Trend?")
+
+	// Editing the second question drops it, its call and its answer.
+	if got := types(send(t, srv, c.ID, `{"text": "Trend in 2024?", "edit": 1}`)); got != "text done" {
+		t.Fatalf("events = %s", got)
+	}
+	conv := a.store.conversation(c.ID)
+	if got := types(items(conv)); got != "user text user text" || len(conv.Results) != 0 || conv.Messages[2].Content != "Trend in 2024?" {
+		t.Errorf("after edit: %s, %d results, %+v", got, len(conv.Results), conv.Messages)
+	}
+	model.mu.Lock()
+	msgs := model.requests[len(model.requests)-1]["messages"].([]any)
+	model.mu.Unlock()
+	if len(msgs) != 4 { // system, user, assistant, the edited user
+		t.Errorf("edit sent %d messages: %v", len(msgs), msgs)
+	}
+
+	// Editing the first renames the conversation; a question it doesn't
+	// have is refused.
+	send(t, srv, c.ID, `{"text": "Where in the north?", "edit": 0}`)
+	if conv := a.store.conversation(c.ID); conv.Title != "Where in the north?" || types(items(conv)) != "user text" {
+		t.Errorf("after editing the first: %q %s", conv.Title, types(items(conv)))
+	}
+	for _, n := range []string{"1", "-1"} {
+		if code := call(t, srv, "POST", "/api/conversations/"+c.ID+"/messages", `{"text": "x", "edit": `+n+`}`, nil); code != 400 {
+			t.Errorf("edit %s: %d, want 400", n, code)
+		}
 	}
 }
 

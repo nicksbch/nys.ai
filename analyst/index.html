@@ -54,8 +54,13 @@ button { font: inherit; font-size: 13px; color: var(--text); background: var(--s
 button:disabled { opacity: .45; cursor: default; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 button.link { border: none; background: none; color: var(--muted); padding: 2px 4px; }
-.user { margin: 22px 0 10px; display: flex; justify-content: flex-end; }
+.user { margin: 22px 0 10px; display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
 .user div { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); border-radius: 12px; padding: 8px 14px; max-width: 80%; white-space: pre-wrap; overflow-wrap: anywhere; }
+.user > button.link { visibility: hidden; }
+.user:hover > button.link, .user > button.link:focus { visibility: visible; }
+@media (hover: none) { .user > button.link { visibility: visible; } }
+.user form { flex: 1; max-width: 80%; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+.user form textarea { width: 100%; }
 .answer { margin: 10px 0; overflow-wrap: anywhere; }
 .answer p { margin: 0 0 8px; }
 .answer ul, .answer ol { margin: 0 0 8px; padding-left: 22px; }
@@ -226,7 +231,7 @@ async function pollBusy(id) {
 function addItem(item, live) {
   const t = $("#thread");
   switch (item.type) {
-    case "user": t.append(el("div", { class: "user" }, el("div", {}, item.text))); break;
+    case "user": t.append(question(item.text)); break;
     case "text": { const d = el("div", { class: "answer" }); d.innerHTML = markdown(item.text); t.append(d); break; }
     case "error": t.append(el("div", { class: "error" }, item.text)); break;
     case "call": {
@@ -278,13 +283,52 @@ $("#ask").addEventListener("submit", async (e) => {
   }
 });
 
-// send posts a question and shows the turn's events as they arrive.
-async function send(id, text) {
+// editQuestion turns a question into a form; sending it asks it again and
+// drops everything after it, in the conversation and on the page.
+function question(text) {
+  const u = el("div", { class: "user" });
+  u.append(el("button", { class: "link", title: "Edit this question and ask again from here", onclick: () => editQuestion(u, text) }, "Edit"), el("div", {}, text));
+  return u;
+}
+
+function editQuestion(u, text) {
+  if ($("#send").disabled) return; // a turn is running
+  const box = el("textarea", { rows: "3" });
+  box.value = text;
+  const cancel = () => u.replaceWith(question(text));
+  const form = el("form", {}, box, el("span", {},
+    el("button", { type: "button", class: "link", onclick: cancel }, "Cancel"), " ",
+    el("button", { class: "primary" }, "Send")));
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const t = box.value.trim();
+    if (!t || $("#send").disabled) return;
+    const n = [...$("#thread").querySelectorAll(".user")].indexOf(u);
+    const id = current.id;
+    while (u.nextSibling) u.nextSibling.remove();
+    u.remove();
+    for (const [k, c] of cards) if (!c.box.isConnected) cards.delete(k);
+    $("#send").disabled = true;
+    try { await send(id, t, n); }
+    catch (err) { $("#thread").append(el("div", { class: "error" }, err.message)); }
+    finally { $("#send").disabled = false; }
+  });
+  box.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); }
+    if (e.key === "Escape") cancel();
+  });
+  u.replaceChildren(form);
+  box.focus();
+}
+
+// send posts a question and shows the turn's events as they arrive. With
+// edit, it replaces that question (from 0) and what came after it.
+async function send(id, text, edit) {
   addItem({ type: "user", text }, true);
   const w = el("div", { class: "waiting" }, "Thinking");
   $("#thread").append(w);
   scrollDown();
-  const r = await fetch("/api/conversations/" + id + "/messages", { method: "POST", headers: { "Content-Type": "application/json", "X-Analyst": "1" }, body: JSON.stringify({ text }) });
+  const r = await fetch("/api/conversations/" + id + "/messages", { method: "POST", headers: { "Content-Type": "application/json", "X-Analyst": "1" }, body: JSON.stringify({ text, edit }) });
   if (!r.ok) { w.remove(); const d = await r.json().catch(() => ({})); throw new Error(d.error || r.statusText); }
   const reader = r.body.getReader();
   const dec = new TextDecoder();

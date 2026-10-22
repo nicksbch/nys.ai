@@ -234,10 +234,12 @@ func (a *app) deleteConversation(r *http.Request) (any, error) {
 }
 
 // message runs one turn and streams its events as JSON lines. The turn goes
-// on if the page goes away, and is saved as it runs.
+// on if the page goes away, and is saved as it runs. With edit, the text
+// replaces that question (from 0) and everything after it is dropped.
 func (a *app) message(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Text string `json:"text"`
+		Edit *int   `json:"edit"`
 	}
 	if err := decode(r, &in); err != nil {
 		writeErr(w, err)
@@ -265,6 +267,10 @@ func (a *app) message(w http.ResponseWriter, r *http.Request) {
 	c, err := a.conv(r)
 	if err != nil {
 		writeErr(w, err)
+		return
+	}
+	if in.Edit != nil && !c.rewind(*in.Edit) {
+		writeErr(w, fail(http.StatusBadRequest, "no question %d to edit", *in.Edit))
 		return
 	}
 

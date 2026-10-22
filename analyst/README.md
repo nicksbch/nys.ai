@@ -8,7 +8,8 @@ rows as a table and a chart, and an analysis you like can be saved as a
 
 - **Chat:** conversations are kept, listed in the sidebar, and continue
   where they left off: a follow-up sends the whole conversation to the
-  model. Answers stream in as the model works.
+  model. Answers stream in as the model works. **Edit** on a question
+  asks it again as changed, and drops everything after it.
 - **Queries:** each `query_model` and `compare_periods` call is a card
   with what was asked (model, measures, dimensions, filters, limit), a
   chart, and the rows. Looking around (`list_models`, `get_model`, ...)
