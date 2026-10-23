@@ -46,6 +46,11 @@ set -euo pipefail
 cd "$(dirname "$0")"
 [[ -f deploy.env ]] && { set -a; . ./deploy.env; set +a; }
 
+# The jobs vigil alerts on when they go quiet. Both data sources (price paid,
+# data.police.uk) publish monthly, so each step should succeed at least every
+# 35 days.
+# VIGIL_EXPECT="${VIGIL_EXPECT-url-to-bucket/download=840h preprocessor/unzip=840h duckpipe/ingest=840h lakeshape/run=840h}"
+
 HOST="${HOST:-192.168.1.169}"   # ssh destination; ~/.ssh/config supplies the user
 SSH_PORT="${SSH_PORT:-2222}"
 ONLY="${ONLY:-}"
@@ -179,8 +184,13 @@ for u in garage vigil relay preprocessor url-to-bucket mcp-hub foreman analyst d
   systemctl cat "$u" >/dev/null 2>&1 || state="not installed"
   row "$u" "$state"
 done
-for h in vigil:8090 relay:8091 url-to-bucket:8093 preprocessor:8099 mcp-hub:8094 foreman:8096 semantic:8097 analyst:8098 home:8000; do
-  curl -fsS -m 3 "http://127.0.0.1:${h#*:}/healthz" >/dev/null 2>&1 && row "${h%%:*} health" ok || row "${h%%:*} health" FAILED
+# name:port[/path], /healthz by default. garage-ui and lake-ui have no health
+# endpoint and ask for a login, so a 401 counts as up.
+for h in vigil:8090 relay:8091 url-to-bucket:8093 preprocessor:8099 mcp-hub:8094 foreman:8096 semantic:8097 analyst:8098 home:8000 garage-ui:8080/ lake-ui:8092/ llama-server:8081/health; do
+  name=${h%%:*} port=${h#*:} path=/healthz
+  [[ $port == */* ]] && path=/${port#*/} port=${port%%/*}
+  code=$(curl -s -o /dev/null -m 3 -w '%{http_code}' "http://127.0.0.1:$port$path" 2>/dev/null)
+  [[ $code == 2* || $code == 401 ]] && row "$name health" ok || row "$name health" "FAILED ($code)"
 done
 EOF
 log "Done: ${done_steps[*]}"
