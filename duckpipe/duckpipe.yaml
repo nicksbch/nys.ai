@@ -33,27 +33,27 @@ pipes:
     table: uk.price_paid
     options: "header = false, all_varchar = true, names = ['transaction_id', 'price', 'date_of_transfer', 'postcode', 'property_type', 'old_new', 'duration', 'paon', 'saon', 'street', 'locality', 'town_city', 'district', 'county', 'ppd_category_type', 'record_status']"
 
-  # Every *.csv below s3://home/raw/orders/ goes into lake.raw.orders.
-  - name: orders
+  # data.police.uk archives, unzipped by preprocessor into
+  # uk/crime/extracted/YYYY-MM/YYYY-MM-<force>-<kind>.csv. Each kind has its
+  # own columns, so each goes into its own table. The CSVs have a header;
+  # normalize_names turns "Crime ID" into crime_id. Kept as text; cast later.
+  - name: crime_street
     bucket: home
-    prefix: raw/orders/
-    pattern: "*.csv"
-    table: raw.orders
-    # Extra read_csv options, as SQL. all_varchar keeps every column as text,
-    # so a file can't fail on a type it wasn't expected to have.
-    # options: "delim = ';', header = true, all_varchar = true"
+    prefix: uk/crime/extracted/
+    pattern: "*-street.csv"
+    table: uk.crime_street
+    options: "header = true, all_varchar = true, normalize_names = true"
 
-  # JSON / NDJSON events; the format comes from the extension (.json, .jsonl,
-  # .ndjson, optionally .gz or .zst). Table defaults to main.<name>.
-  - name: events
+  - name: crime_outcomes
     bucket: home
-    prefix: raw/events/
-    pattern: "*.json*"
+    prefix: uk/crime/extracted/
+    pattern: "*-outcomes.csv"
+    table: uk.crime_outcomes
+    options: "header = true, all_varchar = true, normalize_names = true"
 
-  # Parquet, any file name, loaded up to 200 files per transaction.
-  # - name: trips
-  #   bucket: home
-  #   prefix: raw/trips/
-  #   format: parquet
-  #   table: raw.trips
-  #   batch: 200
+  - name: crime_stop_and_search
+    bucket: home
+    prefix: uk/crime/extracted/
+    pattern: "*-stop-and-search.csv"
+    table: uk.crime_stop_and_search
+    options: "header = true, all_varchar = true, normalize_names = true"
