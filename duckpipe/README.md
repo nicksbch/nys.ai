@@ -25,9 +25,11 @@ you can also use there to query the tables.
   `duckpipe history [pipe]`, or query the table (see below).
 - **Changed files:** a file overwritten with new content (new ETag) is loaded
   again, as Snowpipe does. Its old rows stay; use `_file` to tell them apart.
-- **Schema:** the first file creates the table, with the column types DuckDB
-  detects. A later file with new columns adds them. Missing columns are NULL.
-- **Lineage:** every row gets `_file` (its `s3://` URL) and `_loaded_at`.
+- **Schema:** every table has the same three columns, as Snowflake keeps raw
+  data in a `VARIANT`: `record` (JSON, one row of the file as an object keyed
+  by column name), `_file` (its `s3://` URL) and `_loaded_at`. A file with
+  new, missing or differently typed columns never fails on the table; you
+  pick the fields out later (e.g. in dbt): `record->>'price'`.
 - **Partitions:** target tables are partitioned by the UTC day of `_loaded_at`
   (`…/year=2026/month=10/day=20/*.parquet`), so a filter on `_loaded_at` only
   reads those days' files. Tables from before this get the partitioning on
@@ -97,9 +99,11 @@ pipes:
 | `options`    |                    | Extra options for `read_csv` / `read_json` / `read_parquet`, as SQL             |
 | `batch`      | `50`               | Most files per transaction                                                      |
 
-Types are detected from each file. For raw data from many sources,
-`options: "all_varchar = true"` keeps every CSV column as text, so no file fails
-on an unexpected value, and you cast later (e.g. in dbt).
+Column names and types are detected from each file and kept in `record`: a
+CSV number becomes a JSON number, text a JSON string. `options: "all_varchar =
+true"` keeps every CSV value a string, so the same field has the same JSON type
+in every file. JSON files are read with `read_json_objects`, so each object
+goes into `record` as it is; their `options` go to that function.
 
 Pick the catalog by who needs to read the tables:
 
@@ -121,6 +125,8 @@ CREATE SECRET (TYPE s3, KEY_ID 'GK…', SECRET '…', REGION 'garage',
 ATTACH 'ducklake:sqlite:/var/lib/duckpipe/catalog.sqlite' AS lake (READ_ONLY);
 
 FROM lake.raw.orders LIMIT 10;
+SELECT record->>'order_id' AS order_id, (record->>'amount')::DECIMAL(10, 2) AS amount, _file
+FROM lake.raw.orders;
 FROM lake.duckpipe.load_history ORDER BY loaded_at DESC;   -- what was loaded, into which table, when
 FROM lake.snapshots();                                     -- one per load
 FROM lake.raw.orders AT (VERSION => 3);                    -- time travel
@@ -298,9 +304,27 @@ loaded for a while, deploy vigil with e.g. `EXPECT="duckpipe/ingest=840h"`
   split the prefix into several pipes.
 - Keys containing `*`, `?`, `[` or `{` are marked failed, because DuckDB would
   treat them as wildcards.
-- A column's type is fixed by the first file that has it. A later value that
-  doesn't fit fails that file (see `all_varchar` above).
+- A table from before the `record` layout (with typed columns) isn't loaded
+  into: its pipe shows an error until you drop it and clear its history, so
+  its files load again (see below).
 - Run one duckpipe per catalog.
+
+### Reload a table
+
+To start a pipe's table over (e.g. one from before the `record` layout), drop
+it and its load history in one go; the next poll loads every file again:
+
+```sh
+# As the service, with its catalog login (PG* variables in /etc/duckpipe.env).
+sudo systemd-run --quiet --pipe --wait --collect -p EnvironmentFile=/etc/duckpipe.env \
+  -p User=duckpipe -p Environment=HOME=/var/lib/duckpipe duckdb -c "
+  ATTACH 'ducklake:postgres:dbname=ducklake host=127.0.0.1 user=ducklake' AS lake;
+  BEGIN; DROP TABLE lake.uk.crime_street; DELETE FROM lake.duckpipe.load_history WHERE pipe = 'crime_street'; COMMIT;"
+sudo systemctl kill -s HUP duckpipe
+```
+
+The dropped table's Parquet files are deleted by maintenance once its
+snapshots expire (`keep_snapshots`).
 
 ## Uninstall
 

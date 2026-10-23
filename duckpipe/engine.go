@@ -346,6 +346,12 @@ func (e *engine) poll(ctx context.Context, p *pipe, done map[string]bool) error 
 		}
 	}
 	todo = ok
+	if len(todo) == 0 {
+		return nil
+	}
+	if err := e.ensureTable(ctx, p); err != nil {
+		return err
+	}
 
 	for len(todo) > 0 {
 		n := min(p.Batch, len(todo))
@@ -444,18 +450,19 @@ func (e *engine) load(ctx context.Context, p *pipe, batch []object) (int64, erro
 		if p.Options != "" {
 			args += ", " + p.Options
 		}
-		parts[i] = fmt.Sprintf("SELECT *, %s AS _file, %s AS _loaded_at FROM %s(%s)", src, ts, reader[p.formatOf(o.Key)], args)
+		// Each row of the file becomes one JSON object, keyed by column name.
+		record := "to_json(t)"
+		if p.formatOf(o.Key) == "json" {
+			record = "json" // read_json_objects already gives one object per row
+		}
+		parts[i] = fmt.Sprintf("SELECT %s AS record, %s AS _file, %s AS _loaded_at FROM %s(%s) t",
+			record, src, ts, reader[p.formatOf(o.Key)], args)
 		files[i] = fmt.Sprintf("(%s, %s, %d, %s, %s)", ql(o.Key), ql(o.ETag), o.Size, tsLit(o.Modified), src)
 	}
-	src := strings.Join(parts, "\nUNION ALL BY NAME\n")
+	src := strings.Join(parts, "\nUNION ALL\n")
 
-	ddl, err := e.tableDDL(ctx, p, src)
-	if err != nil {
-		return 0, err
-	}
-	stmts := append([]string{"BEGIN"}, ddl...)
-	stmts = append(stmts,
-		"INSERT INTO "+e.target(p)+" BY NAME "+src,
+	stmts := []string{"BEGIN",
+		"INSERT INTO " + e.target(p) + " " + src,
 		`INSERT INTO `+e.hist+`
 		SELECT `+ql(p.Name)+`, `+ql(p.Bucket)+`, f.key, f.etag, f.size, f.modified,
 			'loaded', coalesce(c.n, 0), NULL, now(), `+ql(e.targetName(p))+`
@@ -464,13 +471,10 @@ func (e *engine) load(ctx context.Context, p *pipe, batch []object) (int64, erro
 			ON c._file = f.url`,
 		"COMMIT",
 		"SELECT count(*) AS n FROM "+e.target(p)+" WHERE _loaded_at = "+ts,
-	)
+	}
 	res, err := e.duck.query(ctx, stmts...)
 	if err != nil {
 		return 0, err
-	}
-	for _, s := range ddl {
-		log.Printf("%s: %s", p.Name, firstLine(s))
 	}
 	if len(res) == 0 {
 		return 0, nil
@@ -481,52 +485,38 @@ func (e *engine) load(ctx context.Context, p *pipe, batch []object) (int64, erro
 // partitionBy splits a table's Parquet files by the UTC day they were loaded.
 const partitionBy = "SET PARTITIONED BY (year(_loaded_at), month(_loaded_at), day(_loaded_at))"
 
-// tableDDL returns the statements that create the pipe's table from the
-// files' columns, or add the columns it lacks. Existing columns are never
-// changed: a value that doesn't fit its column's type fails the file.
-// A table without a partition spec (new, or from before duckpipe set one)
-// gets partitionBy; one someone partitioned otherwise is left alone.
-func (e *engine) tableDDL(ctx context.Context, p *pipe, src string) ([]string, error) {
-	meta := qi("__ducklake_metadata_" + e.cfg.Lake.Name)
-	res, err := e.duck.run(ctx,
-		"SELECT column_name, column_type FROM (DESCRIBE "+src+")",
-		"SELECT column_name FROM duckdb_columns() WHERE database_name = "+ql(e.cfg.Lake.Name)+
-			" AND schema_name = "+ql(p.schema)+" AND table_name = "+ql(p.table),
-		`SELECT count(*) AS n FROM `+meta+`.ducklake_partition_info pi
-		JOIN `+meta+`.ducklake_table t ON t.table_id = pi.table_id AND t.end_snapshot IS NULL
-		JOIN `+meta+`.ducklake_schema s ON s.schema_id = t.schema_id AND s.end_snapshot IS NULL
-		WHERE pi.end_snapshot IS NULL AND s.schema_name = `+ql(p.schema)+` AND t.table_name = `+ql(p.table),
-	)
-	if err != nil {
-		return nil, err
-	}
-	alter := "ALTER TABLE " + e.target(p) + " "
-	have := map[string]bool{}
-	for _, r := range res[1] {
-		have[strings.ToLower(r.str("column_name"))] = true
-	}
+// columns is every target table's schema: each row of a file as one JSON
+// object, so a file with other columns or types never fails on the table.
+const columns = "record JSON, _file VARCHAR, _loaded_at TIMESTAMPTZ"
 
-	if len(have) == 0 {
-		defs := make([]string, len(res[0]))
-		for i, c := range res[0] {
-			defs[i] = qi(c.str("column_name")) + " " + c.str("column_type")
-		}
-		return []string{
-			"CREATE SCHEMA IF NOT EXISTS " + e.lake + "." + qi(p.schema),
-			"CREATE TABLE " + e.target(p) + " (" + strings.Join(defs, ", ") + ")",
-			alter + partitionBy,
-		}, nil
+// ensureTable creates the pipe's table if it doesn't exist, partitioned by
+// partitionBy, and checks that an existing one has exactly columns. A table
+// from before (typed columns) is an error for the pipe, not for its files:
+// drop it and clear its load history to load it again (see README).
+func (e *engine) ensureTable(ctx context.Context, p *pipe) error {
+	res, err := e.duck.run(ctx,
+		"SELECT column_name, data_type FROM duckdb_columns() WHERE database_name = "+ql(e.cfg.Lake.Name)+
+			" AND schema_name = "+ql(p.schema)+" AND table_name = "+ql(p.table)+" ORDER BY column_index")
+	if err != nil {
+		return err
 	}
-	var ddl []string
-	for _, c := range res[0] {
-		if !have[strings.ToLower(c.str("column_name"))] {
-			ddl = append(ddl, alter+"ADD COLUMN "+qi(c.str("column_name"))+" "+c.str("column_type"))
-		}
+	if len(res[0]) == 0 {
+		log.Printf("%s: creating %s (%s)", p.Name, e.targetName(p), columns)
+		_, err := e.duck.run(ctx,
+			"CREATE SCHEMA IF NOT EXISTS "+e.lake+"."+qi(p.schema),
+			"CREATE TABLE IF NOT EXISTS "+e.target(p)+" ("+columns+")",
+			"ALTER TABLE "+e.target(p)+" "+partitionBy)
+		return err
 	}
-	if len(res[2]) == 0 || res[2][0].int("n") == 0 {
-		ddl = append(ddl, alter+partitionBy)
+	have := make([]string, len(res[0]))
+	for i, r := range res[0] {
+		have[i] = r.str("column_name") + " " + r.str("data_type")
 	}
-	return ddl, nil
+	// As duckdb_columns() spells the types of columns.
+	if got := strings.Join(have, ", "); got != "record JSON, _file VARCHAR, _loaded_at TIMESTAMP WITH TIME ZONE" {
+		return fmt.Errorf("%s has columns (%s), not (%s): drop it and clear its load history to reload it", e.targetName(p), got, columns)
+	}
+	return nil
 }
 
 // fail records a file as failed, so it is skipped until it changes or someone

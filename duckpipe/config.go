@@ -48,6 +48,7 @@ type pipe struct {
 	// Target table as [schema.]table. Default: main.<name>.
 	Table string `yaml:"table"`
 	// Extra reader options, as SQL, e.g. "delim = ';', all_varchar = true".
+	// For JSON they go to read_json_objects.
 	Options string `yaml:"options"`
 	// Most files loaded in one transaction.
 	Batch int `yaml:"batch"`
@@ -165,10 +166,11 @@ func (p *pipe) matches(key string) bool {
 	return ok
 }
 
-// Table functions that read each format.
+// Table functions that read each format. JSON is read as one object per
+// row, without guessing columns, so it lands in the record column as is.
 var reader = map[string]string{
 	"csv":     "read_csv",
-	"json":    "read_json",
+	"json":    "read_json_objects",
 	"parquet": "read_parquet",
 }
 
