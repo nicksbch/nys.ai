@@ -8,6 +8,7 @@
 #   garage         linux-scripts/garage-setup.sh   object store; everything else needs it
 #   relay          relay/deploy.sh                 event log; apps publish to it
 #   vigil          vigil/deploy.sh                 monitor; after relay: reads app events from it
+#   preprocessor   preprocessor/deploy.sh          unzips archives; before duckpipe, which loads what it writes
 #   duckpipe *     duckpipe/deploy.sh              before ducklake, which points it at the lake
 #   ducklake       linux-scripts/ducklake-setup.sh PostgreSQL catalog + lake bucket
 #   garage-ui      garage-ui/deploy.sh
@@ -50,7 +51,7 @@ SSH_PORT="${SSH_PORT:-2222}"
 ONLY="${ONLY:-}"
 SKIP="${SKIP:-}"
 
-ORDER=(garage relay vigil duckpipe ducklake garage-ui lake-ui lakeshape semantic url-to-bucket mcp-hub foreman analyst home llama)
+ORDER=(garage relay vigil preprocessor duckpipe ducklake garage-ui lake-ui lakeshape semantic url-to-bucket mcp-hub foreman analyst home llama)
 OPT_IN=(duckpipe llama)   # skipped unless named in ONLY
 
 log() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
@@ -67,6 +68,7 @@ vars() {
     garage) echo "VERSION CAPACITY ZONE BUCKET KEY_NAME S3_BIND WEB_BIND" ;;
     vigil) echo "LISTEN DISKS EXPECT UI_USER WEBHOOK EXTRA_ARGS" ;;
     relay) echo "LISTEN EXTRA_ARGS" ;;
+    preprocessor) echo "BUCKETS KEY_NAME ENDPOINT" ;;
     duckpipe) echo "SOURCE_BUCKETS LAKE_BUCKET KEY_NAME ENDPOINT DUCKDB_VERSION" ;;
     ducklake) echo "LAKE_BUCKET KEY_NAME PG_DB PG_USER S3_ENDPOINT DUCKDB_VERSION LAN_CIDR HOST_IP" ;;
     garage-ui) echo "LISTEN BUCKETS KEY_NAME UI_USER ENDPOINT" ;;
@@ -172,7 +174,7 @@ done
 log "Status on $HOST"
 ssh -p "$SSH_PORT" "$HOST" 'bash -s' <<'EOF'
 row() { printf '  %-14s %s\n' "$1" "$2"; }
-for u in garage vigil relay url-to-bucket mcp-hub foreman analyst duckpipe lakeshape semantic postgresql garage-ui lake-ui home llama-server; do
+for u in garage vigil relay preprocessor url-to-bucket mcp-hub foreman analyst duckpipe lakeshape semantic postgresql garage-ui lake-ui home llama-server; do
   state=$(systemctl is-active "$u" 2>/dev/null)
   systemctl cat "$u" >/dev/null 2>&1 || state="not installed"
   row "$u" "$state"

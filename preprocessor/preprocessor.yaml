@@ -1,0 +1,17 @@
+# preprocessor config. deploy.sh installs it on the server as
+# /etc/preprocessor.yaml: change it here and deploy (ONLY=preprocessor
+# ../deploy-all.sh), not on the server.
+
+# How often to look for new archives. "sudo systemctl kill -s HUP preprocessor"
+# polls now.
+poll: 1m
+
+jobs:
+  # data.police.uk downloads (2026-04.zip, ...). Each holds about three years
+  # of YYYY-MM/YYYY-MM-<force>-{street,outcomes,stop-and-search}.csv, so
+  # entries already written by an earlier month's archive are skipped.
+  - name: uk_crime
+    bucket: home
+    prefix: uk/crime/
+    pattern: "*.zip"
+    to: uk/crime/extracted/
