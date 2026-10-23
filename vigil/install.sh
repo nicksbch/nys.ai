@@ -76,9 +76,12 @@ chmod 0600 "$ENV_FILE"
 [[ -e $CLIENT_ENV ]] && chmod 0644 "$CLIENT_ENV"
 
 # --- 3. systemd unit ---------------------------------------------------------
-disks=()
+disks=() devs=" "
 for d in $DISKS; do
-  if [[ -e $d ]]; then disks+=("$d"); else log "Skipping disk $d: it does not exist"; fi
+  if [[ ! -e $d ]]; then log "Skipping disk $d: it does not exist"; continue; fi
+  dev=$(stat -c %d "$d")
+  if [[ $devs == *" $dev "* ]]; then log "Skipping disk $d: same filesystem as an earlier one"; continue; fi
+  disks+=("$d") devs+="$dev "
 done
 [[ ${#disks[@]} -gt 0 ]] || die "none of DISKS exist: $DISKS"
 args="-listen $LISTEN -disks $(IFS=,; echo "${disks[*]}")"

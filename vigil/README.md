@@ -82,7 +82,7 @@ DISKS="/ /var/lib/garage" ./deploy.sh
 | `HOST`       | `192.168.1.169`       | SSH destination                                                  |
 | `SSH_PORT`   | `2222`                | SSH port on the server                                           |
 | `LISTEN`     | `[::]:8090`           | Where vigil listens. `127.0.0.1:8090` keeps it local            |
-| `DISKS`      | `/ /var/lib/garage`   | Paths to watch, separated by spaces. Missing ones are skipped    |
+| `DISKS`      | `/ /var/lib/garage`   | Paths to watch, separated by spaces. Missing ones, and ones on the same filesystem as an earlier one, are skipped |
 | `EXPECT`     |                       | `app/kind=duration` entries, separated by spaces                 |
 | `WEBHOOK`    |                       | Alert webhook (only used the first time; later edit `/etc/vigil.env`) |
 | `UI_USER`    | `admin`               | Dashboard user name                                              |
