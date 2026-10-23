@@ -1,0 +1,20 @@
+{
+  "id": 3122,
+  "time": "2026-10-22T02:20:03.771Z",
+  "topic": "preprocessor.unzip",
+  "type": "failed",
+  "run_id": "4f8d2a61c09be735",
+  "data": {
+    "name": "exports: s3://home/zips/orders-2026-10-21.zip -> s3://home/exports/",
+    "job": "exports",
+    "bucket": "home",
+    "key": "zips/orders-2026-10-21.zip",
+    "to": "exports/",
+    "bytes": 1048576,
+    "duration_ms": 812,
+    "entries": 0,
+    "written": 0,
+    "skipped": 0,
+    "error": "zip: not a valid zip file"
+  }
+}

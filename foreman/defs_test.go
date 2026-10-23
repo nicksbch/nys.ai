@@ -26,6 +26,22 @@ func TestConfigParses(t *testing.T) {
 		strings.Join(tt.GroupBy, " ") != "topic data.pipe" || strings.Join(tt.Output, " ") != "explanation fix" {
 		t.Errorf("task type = %+v", tt)
 	}
+	// One on-call task type per part of the pipeline.
+	for name, want := range map[string]string{
+		"url-to-bucket-failure": "url-to-bucket.download failed | topic data.url",
+		"preprocessor-failure":  "preprocessor.* failed | topic data.job",
+		"lakeshape-failure":     "lakeshape.* failed | type",
+	} {
+		tt := d.Types[name]
+		if tt == nil {
+			t.Errorf("%s: missing", name)
+			continue
+		}
+		got := tt.OnTopic + " " + strings.Join(tt.OnTypes, ",") + " | " + strings.Join(tt.GroupBy, " ")
+		if got != want || tt.Agent != "oncall" || strings.Join(tt.Output, " ") != "explanation fix" {
+			t.Errorf("%s = %q, agent %s, output %v", name, got, tt.Agent, tt.Output)
+		}
+	}
 	if m := d.Models["local"]; m == nil || m.API != "openai" || m.MaxTokens != 4096 {
 		t.Errorf("local = %+v", m)
 	}

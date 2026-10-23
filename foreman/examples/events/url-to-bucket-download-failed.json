@@ -1,0 +1,17 @@
+{
+  "id": 3104,
+  "time": "2026-10-22T02:11:40.204Z",
+  "topic": "url-to-bucket.download",
+  "type": "failed",
+  "run_id": "9c41e07ab2d35f18",
+  "cause": 3101,
+  "data": {
+    "name": "https://data.example.org/exports/orders-2026-10-21.csv -> s3://home/exports/orders-2026-10-21.csv",
+    "url": "https://data.example.org/exports/orders-2026-10-21.csv",
+    "bucket": "home",
+    "key": "exports/orders-2026-10-21.csv",
+    "duration_ms": 30412,
+    "bytes": 0,
+    "error": "GET https://data.example.org/exports/orders-2026-10-21.csv: 503 Service Unavailable"
+  }
+}

@@ -37,6 +37,14 @@ them; part 2 fixes that in `semantic/server.py`.
 
 ## foreman
 
+### On-call agents that open PRs — `idea`
+
+Parked 2026-10-23: the four on-call task types stop at suggesting a fix.
+Later, they could propose the fix as a PR, opened after your approval,
+using the same [repo-mcp](repo-mcp/SPEC.md) and
+[foreman actions](foreman/SPEC-actions.md) drafts as the analyst feedback
+loop.
+
 ### Service configs readable by agents — `idea`
 
 Let foreman agents read the service configs (duckpipe pipes,

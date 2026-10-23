@@ -1,0 +1,14 @@
+{
+  "id": 3170,
+  "time": "2026-10-22T03:00:12.093Z",
+  "topic": "lakeshape.model",
+  "type": "failed",
+  "run_id": "b27e9f04d18c6a53",
+  "data": {
+    "model": "stg_orders",
+    "relation": "lake.staging.stg_orders",
+    "materialized": "table",
+    "duration_ms": 214,
+    "error": "Binder Error: Referenced column \"order_total\" not found in FROM clause!\nCandidate bindings: \"total\", \"order_id\""
+  }
+}

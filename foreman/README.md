@@ -35,7 +35,7 @@ The design and its reasons are in [SPEC.md](SPEC.md).
 | `server.go`   | The JSON API and the password                                           |
 | `ui.html`     | The web page (plain HTML and JavaScript, built into the binary)         |
 | `config/`     | The server's config: `models.json`, `agents/`, `tasks/`. Deployed as is |
-| `examples/`   | A sample relay event, for `foreman try`                                 |
+| `examples/`   | Sample relay events, for `foreman try`                                  |
 | `deploy.sh`   | Run on your Mac: builds the binary and installs it on the server        |
 | `install.sh`  | Run on the server by `deploy.sh`: binary, secrets, config, systemd service |
 
@@ -69,7 +69,7 @@ ONLY=foreman ../deploy-all.sh
   `LLAMA_API_KEY` when llama-server has one, and a commented-out
   `ANTHROPIC_API_KEY=`. Keys are the one thing you add on the server, since
   they don't belong in the repo.
-- The sample event goes to `/etc/foreman/examples/events/`.
+- The sample events go to `/etc/foreman/examples/events/`.
 
 After deploying:
 
@@ -78,25 +78,36 @@ After deploying:
 - **Firewall:** if `ufw` is active, run `sudo ufw allow 8096/tcp`
 - **Home page:** has a `foreman` card, after `ONLY=home ../deploy-all.sh`
 
-## The duckpipe task
+## The on-call tasks
 
-`config/` starts with one agent and one task type: `oncall` explains failed
-duckpipe ingestions and proposes a fix. Its tools come from mcp-hub's
-`oncall` profile, a small set of vigil tools, which is in
-[`../mcp-hub/servers.json`](../mcp-hub/servers.json). Deploying both turns
-it on:
+`config/` has one agent, `oncall`, and one task type per part of the
+pipeline. Each explains a failure and proposes a fix:
+
+| Task type               | Triggered by                     | One open task per |
+|-------------------------|----------------------------------|-------------------|
+| `url-to-bucket-failure` | `url-to-bucket.download failed`  | URL               |
+| `preprocessor-failure`  | `preprocessor.* failed`          | job               |
+| `duckpipe-failure`      | `duckpipe.* failed`              | pipe              |
+| `lakeshape-failure`     | `lakeshape.* failed`             | (one for lakeshape: a broken run fails several models at once) |
+
+Their tools come from mcp-hub's `oncall` profile, a small set of vigil
+tools, which is in [`../mcp-hub/servers.json`](../mcp-hub/servers.json).
+Deploying both turns them on:
 
 ```sh
 ONLY="mcp-hub foreman" ../deploy-all.sh
 ```
 
-Every `duckpipe.* failed` event in relay then becomes a task in the inbox.
-To try it on the sample failure first (it runs exactly like the service and
+Every matching failure in relay then becomes a task in the inbox. To try a
+task type on its sample failure first (it runs exactly like the service and
 prints the transcript, but stores nothing), on the server:
 
 ```sh
 sudo bash -c 'set -a; . /etc/foreman.env; foreman try duckpipe-failure -event /etc/foreman/examples/events/duckpipe-ingest-failed.json'
 ```
+
+The other samples are `url-to-bucket-download-failed.json`,
+`preprocessor-unzip-failed.json` and `lakeshape-model-failed.json`.
 
 ## Writing agents and task types
 
