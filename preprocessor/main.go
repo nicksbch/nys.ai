@@ -20,7 +20,7 @@
 //
 // Usage:
 //
-//	preprocessor [-config preprocessor.yaml] run           # watch and unzip until stopped
+//	preprocessor [-config preprocessor.yaml] run           # watch and unzip until stopped, with a web page
 //	preprocessor [-config preprocessor.yaml] once          # one pass over all jobs, then exit
 //	preprocessor [-config preprocessor.yaml] status        # archives unzipped, failures
 //	preprocessor [-config preprocessor.yaml] retry [job]   # try failed archives again
@@ -28,6 +28,11 @@
 //	preprocessor [-config preprocessor.yaml] check         # check the config only; nothing is opened
 //
 // SIGHUP makes a running preprocessor poll immediately.
+//
+// "run" serves a web page on -listen (default 127.0.0.1:8099; empty for
+// none): the jobs, their archives and history, with "Poll now", "Extract
+// again" and removing records of past attempts. Set -auth (or
+// PREPROCESSOR_UI_AUTH=user:pass) before exposing it.
 package main
 
 import (
@@ -60,6 +65,8 @@ func main() {
 	profile := fs.String("profile", "", "AWS profile name from ~/.aws")
 	region := fs.String("region", "", "S3 region (default: from env/profile, else garage)")
 	stateDir := fs.String("state-dir", envOr("PREPROCESSOR_STATE_DIR", "."), "where state.json is kept and archives are downloaded to")
+	listen := fs.String("listen", "127.0.0.1:8099", "address of the web page (run only); empty for none")
+	auth := fs.String("auth", os.Getenv("PREPROCESSOR_UI_AUTH"), "require HTTP basic auth on the page, as user:pass")
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Unzip new archives in S3 into another prefix, continuously.\n\n"+
 			"usage: %s [flags] run | once | status | retry [job] | history [job] | check\n\n", fs.Name())
@@ -96,6 +103,8 @@ func main() {
 			workDir: filepath.Join(*stateDir, "tmp"),
 			bus:     relay.FromEnv(),
 			down:    map[string]bool{},
+			poke:    make(chan struct{}, 1),
+			listed:  map[string]listing{},
 		}
 		arg := ""
 		if len(pos) == 2 {
@@ -131,6 +140,9 @@ func main() {
 			}
 			return nil
 		}
+		if *listen != "" {
+			go e.serve(ctx, *listen, *auth)
+		}
 		return e.run(ctx)
 	}()
 	if err != nil {
@@ -141,8 +153,8 @@ func main() {
 	}
 }
 
-// run polls all jobs every cfg.Poll until ctx is cancelled. SIGHUP starts the
-// next poll right away.
+// run polls all jobs every cfg.Poll until ctx is cancelled. SIGHUP, or "Poll
+// now" on the page, starts the next poll right away.
 func (e *engine) run(ctx context.Context) error {
 	hup := make(chan os.Signal, 1)
 	signal.Notify(hup, syscall.SIGHUP)
@@ -157,6 +169,8 @@ func (e *engine) run(ctx context.Context) error {
 			return nil
 		case <-hup:
 			log.Printf("SIGHUP: polling now")
+		case <-e.poke:
+			log.Printf("page: polling now")
 		case <-time.After(e.cfg.Poll.Duration):
 		}
 	}

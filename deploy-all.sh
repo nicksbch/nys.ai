@@ -68,7 +68,7 @@ vars() {
     garage) echo "VERSION CAPACITY ZONE BUCKET KEY_NAME S3_BIND WEB_BIND" ;;
     vigil) echo "LISTEN DISKS EXPECT UI_USER WEBHOOK EXTRA_ARGS" ;;
     relay) echo "LISTEN EXTRA_ARGS" ;;
-    preprocessor) echo "BUCKETS KEY_NAME ENDPOINT" ;;
+    preprocessor) echo "BUCKETS KEY_NAME ENDPOINT LISTEN UI_USER" ;;
     duckpipe) echo "SOURCE_BUCKETS LAKE_BUCKET KEY_NAME ENDPOINT DUCKDB_VERSION" ;;
     ducklake) echo "LAKE_BUCKET KEY_NAME PG_DB PG_USER S3_ENDPOINT DUCKDB_VERSION LAN_CIDR HOST_IP" ;;
     garage-ui) echo "LISTEN BUCKETS KEY_NAME UI_USER ENDPOINT" ;;
@@ -179,7 +179,7 @@ for u in garage vigil relay preprocessor url-to-bucket mcp-hub foreman analyst d
   systemctl cat "$u" >/dev/null 2>&1 || state="not installed"
   row "$u" "$state"
 done
-for h in vigil:8090 relay:8091 url-to-bucket:8093 mcp-hub:8094 foreman:8096 semantic:8097 analyst:8098 home:8000; do
+for h in vigil:8090 relay:8091 url-to-bucket:8093 preprocessor:8099 mcp-hub:8094 foreman:8096 semantic:8097 analyst:8098 home:8000; do
   curl -fsS -m 3 "http://127.0.0.1:${h#*:}/healthz" >/dev/null 2>&1 && row "${h%%:*} health" ok || row "${h%%:*} health" FAILED
 done
 EOF

@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>preprocessor</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --border: rgba(11,11,11,0.10);
+  --text: #0b0b0b; --text-2: #52514e; --muted: #7a7974;
+  --grid: #e1e0d9; --axis: #c3c2b7; --accent: #2a78d6; --track: #ebeae4;
+  --good: #0ca30c; --warning: #fab219; --critical: #d03b3b;
+  --good-text: #006300; --warning-text: #8a5a00; --critical-text: #b22a2a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --border: rgba(255,255,255,0.10);
+    --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e88;
+    --grid: #2c2c2a; --axis: #383835; --accent: #3987e5; --track: #2c2c2a;
+    --good-text: #0ca30c; --warning-text: #fab219; --critical-text: #e66767;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --border: rgba(255,255,255,0.10);
+  --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e88;
+  --grid: #2c2c2a; --axis: #383835; --accent: #3987e5; --track: #2c2c2a;
+  --good-text: #0ca30c; --warning-text: #fab219; --critical-text: #e66767;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 48px; }
+header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+header .spacer { flex: 1; }
+h1 { font-size: 20px; margin: 0; }
+h2 { font-size: 13px; font-weight: 600; color: var(--text-2); margin: 0; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; min-width: 0; }
+.card-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; margin-bottom: 10px; }
+.sub { color: var(--muted); font-size: 12px; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.empty { color: var(--muted); font-size: 13px; padding: 6px 0; }
+.error-line { color: var(--critical-text); margin: 8px 0; overflow-wrap: anywhere; }
+.live { font-size: 13px; color: var(--muted); }
+.live::before { content: "●"; margin-right: 4px; color: var(--muted); }
+.live.on::before { color: var(--good); }
+
+button { font: inherit; font-size: 12px; font-weight: 600; color: var(--accent); background: transparent; border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer; white-space: nowrap; }
+button:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+button.primary { color: #fff; background: var(--accent); border-color: var(--accent); font-size: 13px; padding: 6px 14px; }
+button.danger { color: var(--critical-text); }
+button.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--critical) 10%, transparent); }
+button:disabled { opacity: .45; cursor: default; }
+select { font: inherit; font-size: 12px; color: var(--text); background: var(--page); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; }
+
+.busy { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.bar { height: 6px; background: var(--track); border-radius: 3px; overflow: hidden; margin-top: 8px; }
+.bar > div { height: 100%; width: 30%; background: var(--accent); border-radius: 3px; animation: slide 1.4s ease-in-out infinite; }
+@keyframes slide { from { margin-left: -30%; } to { margin-left: 100%; } }
+
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; color: var(--text-2); font-weight: 600; border-bottom: 1px solid var(--axis); padding: 6px 8px; white-space: nowrap; }
+td { border-bottom: 1px solid var(--grid); padding: 6px 8px; vertical-align: top; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.act { text-align: right; white-space: nowrap; }
+.nowrap { white-space: nowrap; }
+td.path { overflow-wrap: anywhere; min-width: 160px; }
+.st-ok { color: var(--good-text); }
+.st-failed { color: var(--critical-text); }
+.st-pending, .st-unzipping { color: var(--warning-text); }
+.st-redone { color: var(--muted); }
+.tag { display: inline-block; font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; margin-left: 4px; font-weight: 400; }
+.err { color: var(--critical-text); font-size: 12px; overflow-wrap: anywhere; }
+@media (max-width: 700px) { .opt { display: none; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>preprocessor</h1>
+    <span class="live" id="live">connecting</span>
+    <span class="sub" id="poll-every"></span>
+    <span class="spacer"></span>
+    <button class="primary" id="poll-now">Poll now</button>
+  </header>
+  <div class="error-line" id="action-error" hidden></div>
+
+  <section class="card" id="busy-card" hidden>
+    <div class="busy">
+      <h2>Unzipping</h2>
+      <span class="mono" id="busy-key"></span>
+      <span class="sub" id="busy-info"></span>
+    </div>
+    <div class="bar"><div></div></div>
+  </section>
+
+  <div id="jobs"></div>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>History</h2>
+      <select id="history-job"><option value="">all jobs</option></select>
+      <span class="sub">Every attempt in state.json, newest first. Remove a record you no longer need; the one that keeps an archive in the bucket from being unzipped again can't be removed — use “Extract again”.</span>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>When</th><th>Job</th><th>Archive</th><th>Status</th><th class="num">Entries</th><th class="num">Written</th><th class="num opt">Unchanged</th><th></th></tr></thead>
+      <tbody id="history"></tbody>
+    </table></div>
+  </section>
+  <div class="error-line" id="fetch-error" hidden></div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const HEADERS = {'Content-Type': 'application/json', 'X-Preprocessor': '1'};
+
+// el builds an element; children are nodes or strings (always set as text).
+function el(tag, attrs, ...children) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) if (v != null) e.setAttribute(k, v);
+  for (const c of children) if (c != null) e.append(c);
+  return e;
+}
+
+async function api(path, body) {
+  const opts = body === undefined ? {cache: 'no-store'}
+    : {method: 'POST', headers: HEADERS, body: JSON.stringify(body)};
+  const r = await fetch(path, opts);
+  const out = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(out.error || r.status + ' ' + r.statusText);
+  return out;
+}
+
+function fmtBytes(n) {
+  if (n >= 1e9) return (n / 1e9).toFixed(2) + ' GB';
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + ' MB';
+  if (n >= 1e3) return (n / 1e3).toFixed(0) + ' kB';
+  return n + ' B';
+}
+function fmtAge(t) {
+  const s = Math.max(0, (Date.now() - new Date(t)) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.round(s / 60) + 'm ago';
+  if (s < 172800) return Math.floor(s / 3600) + 'h ago';
+  return Math.round(s / 86400) + 'd ago';
+}
+function fmtDur(s) {
+  s = Math.round(s);
+  const m = Math.floor(s / 60), r = s % 60;
+  return m ? m + 'm' + String(r).padStart(2, '0') + 's' : r + 's';
+}
+const when = t => el('td', {class: 'nowrap', title: new Date(t).toLocaleString()}, fmtAge(t));
+// rel shows a key below the job's prefix, as the job sees it.
+const rel = (job, key) => job && key.startsWith(job.prefix) ? key.slice(job.prefix.length) : key;
+
+function showError(e) {
+  $('action-error').textContent = e ? e.message : '';
+  $('action-error').hidden = !e;
+}
+
+// act runs a button's action, disabling it meanwhile, then refreshes.
+async function act(btn, path, body) {
+  btn.disabled = true;
+  showError(null);
+  try { await api(path, body); } catch (e) { showError(e); }
+  btn.disabled = false;
+  poll();
+}
+
+// --- Render -------------------------------------------------------------------
+
+let jobsByName = {};
+
+function renderBusy(b) {
+  $('busy-card').hidden = !b;
+  if (!b) return;
+  $('busy-key').textContent = 's3://' + (jobsByName[b.job] || {}).bucket + '/' + b.key;
+  $('busy-info').textContent = b.job + ' · ' + fmtBytes(b.size) + ' · ' + fmtDur((Date.now() - new Date(b.started)) / 1000);
+}
+
+function jobCard(j) {
+  const head = el('div', {class: 'card-head'},
+    el('h2', {}, j.name),
+    el('span', {class: 'mono'}, 's3://' + j.bucket + '/' + j.prefix + j.pattern + ' → s3://' + j.bucket + '/' + j.to),
+    el('span', {class: 'sub'}, j.polled ? 'listed ' + fmtAge(j.polled_at) : 'not listed yet'));
+  const card = el('section', {class: 'card'}, head);
+  if (j.error) card.append(el('div', {class: 'error-line'}, 'Last poll failed: ' + j.error));
+  if (!j.polled) return card;
+  if (!j.archives.length) {
+    card.append(el('div', {class: 'empty'}, 'No archives in s3://' + j.bucket + '/' + j.prefix + ' match ' + j.pattern + '.'));
+    return card;
+  }
+  const rows = j.archives.map(a => {
+    const l = a.last;
+    const status = {pending: 'waiting for the next poll', unzipping: 'unzipping', ok: 'unzipped', failed: 'failed'}[a.status] || a.status;
+    const redo = el('button', {title: 'Unzip it again on the next poll; unchanged entries are skipped'}, 'Extract again');
+    redo.disabled = a.status === 'pending' || a.status === 'unzipping';
+    redo.onclick = () => act(redo, 'api/redo', {job: j.name, key: a.key});
+    return el('tr', {},
+      el('td', {class: 'path'}, el('div', {class: 'mono'}, rel(j, a.key)),
+        l && l.error ? el('div', {class: 'err'}, l.error) : null),
+      el('td', {class: 'num'}, fmtBytes(a.size)),
+      el('td', {class: 'nowrap opt', title: new Date(a.modified).toLocaleString()}, 'uploaded ' + fmtAge(a.modified)),
+      el('td', {class: 'nowrap st-' + a.status}, status),
+      el('td', {class: 'num'}, l ? l.written + ' written, ' + l.skipped + ' unchanged' : '–'),
+      l ? when(l.at) : el('td', {}, '–'),
+      el('td', {class: 'act'}, redo));
+  });
+  card.append(el('div', {class: 'table-wrap'}, el('table', {},
+    el('thead', {}, el('tr', {}, el('th', {}, 'Archive'), el('th', {class: 'num'}, 'Size'), el('th', {class: 'opt'}, 'In bucket'),
+      el('th', {}, 'Status'), el('th', {class: 'num'}, 'Files'), el('th', {}, 'Last run'), el('th'))),
+    el('tbody', {}, ...rows))));
+  return card;
+}
+
+function renderHistory(list) {
+  const only = $('history-job').value;
+  const rows = list.filter(h => !only || h.job === only).map(h => {
+    const status = el('td', {class: 'nowrap st-' + (h.redone ? 'redone' : h.status)}, h.status);
+    if (h.redone) status.append(el('span', {class: 'tag', title: 'Extracted again since; kept as history'}, 'redone'));
+    if (h.current) status.append(el('span', {class: 'tag', title: 'The attempt that counts for the archive now in the bucket'}, 'current'));
+    const rm = el('button', {class: 'danger'}, 'Remove');
+    if (h.current) {
+      rm.disabled = true;
+      rm.title = 'The archive is still in the bucket: removing this would unzip it again. Use “Extract again”.';
+    }
+    rm.onclick = () => {
+      if (!confirm('Remove the ' + h.status + ' record of s3://' + h.bucket + '/' + h.key + ' from ' + new Date(h.at).toLocaleString() + '?\nThe files it wrote stay in the bucket.')) return;
+      act(rm, 'api/remove', h);
+    };
+    return el('tr', {},
+      when(h.at),
+      el('td', {class: 'nowrap'}, h.job),
+      el('td', {class: 'path'}, el('div', {class: 'mono'}, 's3://' + h.bucket + '/' + h.key),
+        el('div', {class: 'sub mono'}, 'ETag ' + h.etag),
+        h.error ? el('div', {class: 'err'}, h.error) : null),
+      status,
+      el('td', {class: 'num'}, h.entries),
+      el('td', {class: 'num'}, h.written),
+      el('td', {class: 'num opt'}, h.skipped),
+      el('td', {class: 'act'}, rm));
+  });
+  $('history').replaceChildren(...(rows.length ? rows
+    : [el('tr', {}, el('td', {colspan: 8, class: 'empty'}, 'No archives unzipped yet.'))]));
+}
+
+function renderJobFilter(jobs, history) {
+  const sel = $('history-job'), names = new Set([...jobs.map(j => j.name), ...history.map(h => h.job)]);
+  const have = [...sel.options].slice(1).map(o => o.value).join('\n');
+  if (have === [...names].join('\n')) return;
+  const cur = sel.value;
+  sel.replaceChildren(el('option', {value: ''}, 'all jobs'), ...[...names].map(n => el('option', {value: n}, n)));
+  sel.value = cur;
+}
+
+// --- Polling ------------------------------------------------------------------
+// Every 2 s while an archive is being unzipped, every 10 s otherwise, paused
+// while the tab is hidden.
+
+let timer = null, last = null;
+async function poll() {
+  clearTimeout(timer);
+  try {
+    const s = await api('api/state');
+    last = s;
+    jobsByName = Object.fromEntries(s.jobs.map(j => [j.name, j]));
+    $('poll-every').textContent = 'polls every ' + s.poll;
+    renderBusy(s.busy);
+    $('jobs').replaceChildren(...s.jobs.map(jobCard));
+    renderJobFilter(s.jobs, s.history);
+    renderHistory(s.history);
+    $('fetch-error').hidden = true;
+    $('live').classList.add('on');
+    $('live').textContent = s.busy ? 'unzipping' : 'idle';
+  } catch (e) {
+    $('fetch-error').textContent = 'Could not load the state: ' + e.message;
+    $('fetch-error').hidden = false;
+    $('live').classList.remove('on');
+    $('live').textContent = 'reconnecting';
+  }
+  if (!document.hidden) timer = setTimeout(poll, last && last.busy ? 2000 : 10000);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
+$('history-job').onchange = () => last && renderHistory(last.history);
+$('poll-now').onclick = () => act($('poll-now'), 'api/poll', {});
+
+poll();
+</script>
+</body>
+</html>

@@ -7,18 +7,20 @@
 #   sudo bash install.sh ./preprocessor
 #
 # Override defaults with env vars, e.g.:
-#   sudo BUCKETS="home photos" bash install.sh ./preprocessor
+#   sudo BUCKETS="home photos" LISTEN=127.0.0.1:8099 bash install.sh ./preprocessor
 #
 # Safe to re-run: the binary, /etc/preprocessor.yaml (the jobs, from the repo)
 # and the unit are replaced and the service restarted. preprocessor.yaml is
 # checked first: if it doesn't load, nothing is changed. An existing
-# /etc/preprocessor.env (S3 key) is left untouched.
+# /etc/preprocessor.env (S3 key, page login) is left untouched.
 
 set -euo pipefail
 
 BUCKETS="${BUCKETS:-home}"   # buckets preprocessor reads archives from and writes entries to
 KEY_NAME="${KEY_NAME:-preprocessor-key}"
 ENDPOINT="${ENDPOINT:-http://127.0.0.1:3900}"
+LISTEN="${LISTEN:-[::]:8099}"   # the web page; use 127.0.0.1:8099 for local only
+UI_USER="${UI_USER:-admin}"     # basic-auth user for the web page
 
 SRC_BIN="${1:-}"
 SRC_CONFIG="$(dirname "${SRC_BIN:-.}")/preprocessor.yaml"   # from the repo; replaces CONFIG
@@ -97,8 +99,14 @@ AWS_EC2_METADATA_DISABLED=true
 EOF
   umask 022
 fi
-# Holds the S3 secret. systemd reads it as root, so the service itself needs no
-# access.
+new_login=
+if ! grep -q '^PREPROCESSOR_UI_AUTH=' "$ENV_FILE"; then
+  log "Adding a login for the web page to $ENV_FILE"
+  new_login="$UI_USER:$(openssl rand -base64 24 | tr -d '/+=')"
+  echo "PREPROCESSOR_UI_AUTH=$new_login" >>"$ENV_FILE"
+fi
+# Holds the S3 secret and the page password. systemd reads it as root, so the
+# service itself needs no access.
 chown root:root "$ENV_FILE"
 chmod 0600 "$ENV_FILE"
 
@@ -118,7 +126,7 @@ Wants=network-online.target
 EnvironmentFile=$ENV_FILE
 # RELAY_URL and RELAY_TOKEN, if relay is installed; archives are published to it.
 EnvironmentFile=-/etc/relay-client.env
-ExecStart=$BIN -config $CONFIG -state-dir $STATE_DIR run
+ExecStart=$BIN -config $CONFIG -state-dir $STATE_DIR -listen $LISTEN run
 User=preprocessor
 Group=preprocessor
 # Archives are downloaded to $STATE_DIR/tmp while they are unzipped: it needs
@@ -148,11 +156,24 @@ for i in {1..30}; do
   fi
   sleep 1
 done
+port=${LISTEN##*:}
+if command -v curl >/dev/null; then
+  for i in {1..10}; do
+    curl -fsS "http://127.0.0.1:$port/healthz" >/dev/null 2>&1 && break
+    [[ $i -eq 10 ]] && die "the web page is not answering on port $port"
+    sleep 1
+  done
+fi
+if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+  log "ufw is active: to reach the page from the LAN run 'sudo ufw allow $port/tcp'"
+fi
 
 # --- Done --------------------------------------------------------------------
+host_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
 cat <<EOF
 
 preprocessor is running.
+  Page    : http://${host_ip:-localhost}:$port   (state, history, poll now, extract again)
   Config  : $CONFIG, from preprocessor/preprocessor.yaml in the repo (change it there and deploy)
   State   : $STATE_DIR/state.json
   Status  : sudo preprocessorctl status
@@ -161,3 +182,10 @@ preprocessor is running.
   Logs    : journalctl -u preprocessor -f
   Poll now: sudo systemctl kill -s HUP preprocessor
 EOF
+if [[ -n $new_login ]]; then
+  cat <<EOF
+  Login   : ${new_login%%:*} / ${new_login#*:}   <- save this; also in $ENV_FILE
+EOF
+else
+  echo "  Login   : sudo grep PREPROCESSOR_UI_AUTH $ENV_FILE"
+fi

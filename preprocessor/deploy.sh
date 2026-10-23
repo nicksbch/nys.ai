@@ -8,9 +8,9 @@
 # password). Override defaults with env vars, e.g.:
 #   HOST=nicolas@192.168.1.169 SSH_PORT=2222 BUCKETS="home" ./deploy.sh
 #
-# BUCKETS, KEY_NAME and ENDPOINT are passed on to install.sh. Safe to re-run
-# to ship a new version. preprocessor.yaml (the jobs) is shipped too and
-# replaces the server's: change it here, then deploy.
+# BUCKETS, KEY_NAME, ENDPOINT, LISTEN and UI_USER are passed on to
+# install.sh. Safe to re-run to ship a new version. preprocessor.yaml (the
+# jobs) is shipped too and replaces the server's: change it here, then deploy.
 
 set -euo pipefail
 
@@ -44,7 +44,7 @@ scp -q -P "$SSH_PORT" "$out/preprocessor" install.sh preprocessor.yaml "$HOST:$r
 
 # Forward only the settings set here, so install.sh defaults apply otherwise.
 vars=()
-for v in BUCKETS KEY_NAME ENDPOINT; do
+for v in BUCKETS KEY_NAME ENDPOINT LISTEN UI_USER; do
   if [[ -n ${!v:-} ]]; then vars+=("$v=$(printf %q "${!v}")"); fi
 done
 

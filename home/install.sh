@@ -13,7 +13,7 @@
 set -euo pipefail
 
 LISTEN="${LISTEN:-[::]:8000}"   # reachable from the LAN; use 127.0.0.1:8000 for local only
-SERVICES="${SERVICES:-vigil=8090 relay=8091/ui garage-ui=8080 lake-ui=8092 url-to-bucket=8093 foreman=8096/ui}"   # name=port[/path]
+SERVICES="${SERVICES:-vigil=8090 relay=8091/ui garage-ui=8080 lake-ui=8092 url-to-bucket=8093 preprocessor=8099 foreman=8096/ui analyst=8098}"   # name=port[/path]
 
 SRC_BIN="${1:-}"
 BIN=/usr/local/bin/home

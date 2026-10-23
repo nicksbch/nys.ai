@@ -29,6 +29,9 @@ unzipped files sit next to them.
   is unzipped, then deleted. The server needs room for the largest one.
 - **Monitoring:** archives and failures are published to [relay](../relay)
   when relay is installed, and [vigil](../vigil) shows them.
+- **Page:** a web page (port 8099) shows each job's archives, what is being
+  unzipped and the history, and can poll now, extract an archive again and
+  remove records of past attempts. See [The page](#the-page).
 
 It looks for new archives every minute (`poll`). `sudo systemctl kill -s HUP
 preprocessor` makes it look now.
@@ -41,6 +44,8 @@ preprocessor` makes it look now.
 | `config.go`         | `preprocessor.yaml`: jobs, checks, which keys match           |
 | `unzip.go`          | Polling, unzipping, status, history, retry                    |
 | `state.go`          | `state.json`: every archive unzipped or failed                |
+| `ui.go`             | The web page's server: JSON API, poll now, redo, remove       |
+| `ui.html`           | The page (plain HTML and JavaScript, built into the binary)   |
 | `preprocessor.yaml` | The jobs, installed on the server as `/etc/preprocessor.yaml` |
 | `deploy.sh`         | Build here, install on the server                             |
 | `install.sh`        | Runs on the server: key, user, config, systemd unit           |
@@ -73,6 +78,7 @@ jobs:
 go run . -config preprocessor.yaml check    # the config loads?
 go run . -config preprocessor.yaml -state-dir /tmp/pp once
 go run . -state-dir /tmp/pp status
+go run . -config preprocessor.yaml -state-dir /tmp/pp run   # page on http://127.0.0.1:8099
 ```
 
 This writes to the real bucket. Keep `-state-dir` separate from the server's:
@@ -95,6 +101,8 @@ ssh, and runs `install.sh` with sudo. Settings (in `../deploy.env` with the
 | `BUCKETS`  | `home`                  | Buckets the key may read and write              |
 | `KEY_NAME` | `preprocessor-key`      | Garage key the service uses                     |
 | `ENDPOINT` | `http://127.0.0.1:3900` | S3 endpoint, as seen from the server (first install only) |
+| `LISTEN`   | `[::]:8099`             | The web page; `127.0.0.1:8099` for local only   |
+| `UI_USER`  | `admin`                 | Basic-auth user for the page (first install only) |
 
 ### What `install.sh` does (on the server)
 
@@ -105,16 +113,19 @@ ssh, and runs `install.sh` with sudo. Settings (in `../deploy.env` with the
 3. Creates a `preprocessor` system user, which owns `/var/lib/preprocessor`.
 4. Creates a key, `preprocessor-key`, that can read and write `BUCKETS`. On
    the first run only, it writes `/etc/preprocessor.env` (the key, root only).
+   It adds a login for the page (`PREPROCESSOR_UI_AUTH`) if there isn't one,
+   and prints it once.
 5. Installs `preprocessor.yaml` from the repo as `/etc/preprocessor.yaml`,
    every time.
 6. Writes `/etc/systemd/system/preprocessor.service`, then enables and
-   restarts it, and waits until it is watching.
+   restarts it, and waits until it is watching and the page answers.
 
 ## After deploying
 
 - **Change your jobs:** edit `preprocessor.yaml` here and deploy. Don't edit
   `/etc/preprocessor.yaml` on the server: the next deploy replaces it. A job's
   bucket must be one of `BUCKETS`.
+- **Page:** `http://<server>:8099`; login: `sudo grep PREPROCESSOR_UI_AUTH /etc/preprocessor.env`
 - **Status:** `sudo preprocessorctl status`
 - **Retry failed archives:** `sudo preprocessorctl retry [job]`
 - **History:** `sudo preprocessorctl history [job]`
@@ -124,6 +135,28 @@ ssh, and runs `install.sh` with sudo. Settings (in `../deploy.env` with the
 Use `preprocessorctl` rather than running `preprocessor` as root: it runs as
 the service's user, so it can't leave a root-owned `state.json` behind that
 the service can't write.
+
+## The page
+
+`preprocessor run` serves it on `-listen` (default `127.0.0.1:8099`, empty for
+none), with basic auth from `-auth` / `PREPROCESSOR_UI_AUTH`.
+
+- **Jobs:** each job from `/etc/preprocessor.yaml`, read-only (change jobs in
+  the repo and deploy), with the archives its last poll found: waiting for
+  the next poll, unzipping, unzipped or failed, and how many files the last
+  run wrote.
+- **Poll now:** like `systemctl kill -s HUP`; a poll already running finishes
+  first.
+- **Extract again:** marks the archive's records `redone` and polls, so it is
+  unzipped again even though its ETag hasn't changed (say, after the extracted
+  files were deleted). Entries already there and unchanged are still skipped.
+  Redone records stay in the history.
+- **History:** every record in `state.json`, newest first. **Remove** deletes
+  one, e.g. failures of archives that are no longer in the bucket. The record
+  that keeps an archive still in the bucket from being unzipped again can't
+  be removed (that would be "Extract again"), and until the first poll none
+  can, because it isn't known yet which archives are in the bucket. Removing
+  a record never deletes files from the bucket.
 
 ## relay and vigil
 

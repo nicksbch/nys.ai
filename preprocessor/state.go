@@ -10,8 +10,9 @@ import (
 )
 
 // record is one attempt at an archive: unzipped ("ok") or "failed". An
-// archive is done once it has a record for its current ETag; "preprocessor
-// retry" removes failed records so they are tried again.
+// archive is done once it has a record for its current ETag that isn't
+// redone; "preprocessor retry" removes failed records so they are tried
+// again, and "Extract again" on the page marks an archive's records redone.
 type record struct {
 	Job     string    `json:"job"`
 	Bucket  string    `json:"bucket"`
@@ -24,6 +25,7 @@ type record struct {
 	Skipped int       `json:"skipped"` // already there, unchanged
 	Error   string    `json:"error,omitempty"`
 	At      time.Time `json:"at"`
+	Redone  bool      `json:"redone,omitempty"` // kept as history; no longer counts as done
 }
 
 func (r record) id() string { return r.Job + "\x00" + r.Bucket + "\x00" + r.Key + "\x00" + r.ETag }
@@ -100,4 +102,37 @@ func (s *store) update(fn func([]record) []record) error {
 
 func (s *store) add(r record) error {
 	return s.update(func(rs []record) []record { return append(rs, r) })
+}
+
+// redo marks every record of an archive redone, so the next poll unzips it
+// again. It returns how many records it marked.
+func (s *store) redo(job, bucket, key string) (int, error) {
+	n := 0
+	err := s.update(func(rs []record) []record {
+		for i, r := range rs {
+			if r.Job == job && r.Bucket == bucket && r.Key == key && !r.Redone {
+				rs[i].Redone = true
+				n++
+			}
+		}
+		return rs
+	})
+	return n, err
+}
+
+// remove deletes the record of one attempt. It reports whether there was one.
+func (s *store) remove(want record) (bool, error) {
+	found := false
+	err := s.update(func(rs []record) []record {
+		keep := rs[:0]
+		for _, r := range rs {
+			if !found && r.id() == want.id() && r.At.Equal(want.At) {
+				found = true
+				continue
+			}
+			keep = append(keep, r)
+		}
+		return keep
+	})
+	return found, err
 }

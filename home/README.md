@@ -21,7 +21,9 @@ Default services:
 | `garage-ui`     | 8080 | `/`   |
 | `lake-ui`       | 8092 | `/`   |
 | `url-to-bucket` | 8093 | `/`   |
+| `preprocessor`  | 8099 | `/`   |
 | `foreman`       | 8096 | `/ui` |
+| `analyst`       | 8098 | `/`   |
 
 ## Files
 
@@ -41,7 +43,7 @@ go build -o home . && ./home     # then open http://127.0.0.1:8000
 | Flag        | Default                                                | Meaning                                       |
 |-------------|--------------------------------------------------------|-----------------------------------------------|
 | `-listen`   | `127.0.0.1:8000`                                       | Address to serve the page on                  |
-| `-services` | `vigil=8090 relay=8091/ui garage-ui=8080 lake-ui=8092 url-to-bucket=8093 foreman=8096/ui` | Services, as `name=port[/path]`, space separated |
+| `-services` | `vigil=8090 relay=8091/ui garage-ui=8080 lake-ui=8092 url-to-bucket=8093 preprocessor=8099 foreman=8096/ui analyst=8098` | Services, as `name=port[/path]`, space separated |
 
 ## Deploy to the server
 
@@ -54,7 +56,7 @@ go build -o home . && ./home     # then open http://127.0.0.1:8000
 | `HOST`     | `192.168.1.169`                                        | SSH destination                           |
 | `SSH_PORT` | `2222`                                                 | SSH port on the server                    |
 | `LISTEN`   | `[::]:8000`                                            | Where the page listens                    |
-| `SERVICES` | `vigil=8090 relay=8091/ui garage-ui=8080 lake-ui=8092 url-to-bucket=8093 foreman=8096/ui` | Services to show                          |
+| `SERVICES` | `vigil=8090 relay=8091/ui garage-ui=8080 lake-ui=8092 url-to-bucket=8093 preprocessor=8099 foreman=8096/ui analyst=8098` | Services to show                          |
 
 The systemd unit is rewritten on every run, so keep non-default values in
 `../deploy.env` (`HOME_LISTEN`, `HOME_SERVICES`).

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -35,12 +36,44 @@ type engine struct {
 
 	bus  *relay.Client   // nil (no-op) when relay isn't configured
 	down map[string]bool // what last failed to poll, so relay hears of it once
+	poke chan struct{}   // a poll asked for by the page
+
+	// What the page shows besides state.json.
+	mu     sync.Mutex
+	listed map[string]listing // job name -> its archives at the last poll
+	busy   *unzipping         // the archive being unzipped, if any
 }
 
 type object struct {
-	Key, ETag string
-	Size      int64
-	Modified  time.Time
+	Key      string    `json:"key"`
+	ETag     string    `json:"etag"`
+	Size     int64     `json:"size"`
+	Modified time.Time `json:"modified"`
+}
+
+// listing is a job's archives as its last poll found them.
+type listing struct {
+	At       time.Time // of the last successful listing
+	Err      string    // of the last poll, if it failed
+	Archives []object
+}
+
+type unzipping struct {
+	Job     string    `json:"job"`
+	Key     string    `json:"key"`
+	Size    int64     `json:"size"`
+	Started time.Time `json:"started"`
+}
+
+// doneIDs returns the archives (job, bucket, key, ETag) not to unzip again.
+func doneIDs(rs []record) map[string]bool {
+	done := map[string]bool{}
+	for _, r := range rs {
+		if !r.Redone {
+			done[r.id()] = true
+		}
+	}
+	return done
 }
 
 // badArchive is an error in the archive itself (corrupt, unsafe entry
@@ -86,10 +119,7 @@ func (e *engine) cycle(ctx context.Context) (failed bool) {
 		log.Printf("reading %s: %v (will retry next poll)", e.state.file, err)
 		return true
 	}
-	done := map[string]bool{}
-	for _, r := range rs {
-		done[r.id()] = true
-	}
+	done := doneIDs(rs)
 	for _, j := range e.cfg.Jobs {
 		if ctx.Err() != nil {
 			return true
@@ -99,6 +129,13 @@ func (e *engine) cycle(ctx context.Context) (failed bool) {
 			return true
 		}
 		e.polled(j.Name, err)
+		if err != nil {
+			e.mu.Lock()
+			l := e.listed[j.Name]
+			l.Err = err.Error()
+			e.listed[j.Name] = l
+			e.mu.Unlock()
+		}
 		if err != nil {
 			failed = true
 			log.Printf("%s: %v (will retry next poll)", j.Name, err)
@@ -149,7 +186,7 @@ func newRunID() string {
 // poll lists the job's prefix and unzips every archive without a record for
 // its current ETag, oldest first, one at a time.
 func (e *engine) poll(ctx context.Context, j *job, done map[string]bool) error {
-	var todo []object
+	var all, todo []object
 	pg := s3.NewListObjectsV2Paginator(e.s3, &s3.ListObjectsV2Input{
 		Bucket: aws.String(j.Bucket),
 		Prefix: aws.String(j.Prefix),
@@ -166,13 +203,19 @@ func (e *engine) poll(ctx context.Context, j *job, done map[string]bool) error {
 				Size:     aws.ToInt64(o.Size),
 				Modified: aws.ToTime(o.LastModified),
 			}
-			r := record{Job: j.Name, Bucket: j.Bucket, Key: obj.Key, ETag: obj.ETag}
-			if obj.Size == 0 || !j.matches(obj.Key) || done[r.id()] {
+			if obj.Size == 0 || !j.matches(obj.Key) {
 				continue
 			}
-			todo = append(todo, obj)
+			all = append(all, obj)
+			r := record{Job: j.Name, Bucket: j.Bucket, Key: obj.Key, ETag: obj.ETag}
+			if !done[r.id()] {
+				todo = append(todo, obj)
+			}
 		}
 	}
+	e.mu.Lock()
+	e.listed[j.Name] = listing{At: time.Now().UTC(), Archives: all}
+	e.mu.Unlock()
 	sort.Slice(todo, func(a, b int) bool {
 		if !todo[a].Modified.Equal(todo[b].Modified) {
 			return todo[a].Modified.Before(todo[b].Modified)
@@ -204,6 +247,14 @@ func (e *engine) process(ctx context.Context, j *job, o object) error {
 	e.publish("unzip", "started", runID, data(), nil)
 	log.Printf("%s: unzipping %s (%s)", j.Name, src, size(o.Size))
 
+	e.mu.Lock()
+	e.busy = &unzipping{Job: j.Name, Key: o.Key, Size: o.Size, Started: start.UTC()}
+	e.mu.Unlock()
+	defer func() {
+		e.mu.Lock()
+		e.busy = nil
+		e.mu.Unlock()
+	}()
 	r, err := e.unzip(ctx, j, o)
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -457,8 +508,12 @@ func (e *engine) history(w io.Writer, job string) error {
 		if job != "" && r.Job != job {
 			continue
 		}
+		status := r.Status
+		if r.Redone {
+			status += " (redone)"
+		}
 		fmt.Fprintf(tw, "%s\t%s\ts3://%s/%s\t%s\t%d\t%d\t%d\n", r.At.Format("2006-01-02 15:04:05"),
-			r.Job, r.Bucket, r.Key, r.Status, r.Entries, r.Written, r.Skipped)
+			r.Job, r.Bucket, r.Key, status, r.Entries, r.Written, r.Skipped)
 	}
 	return tw.Flush()
 }
