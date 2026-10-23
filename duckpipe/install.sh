@@ -10,7 +10,7 @@
 # its loads with and which you can use to query the tables.
 #
 # Override defaults with env vars, e.g.:
-#   sudo SOURCE_BUCKETS="home photos" LAKE_BUCKET=lake bash install.sh ./duckpipe
+#   sudo SOURCE_BUCKETS="home photos" LAKE_BUCKET=lake LISTEN=127.0.0.1:8100 bash install.sh ./duckpipe
 #
 # Safe to re-run: the binary, /etc/duckpipe.yaml (the pipes, from the repo)
 # and the unit are replaced and the service restarted. duckpipe.yaml is checked
@@ -24,6 +24,8 @@ LAKE_BUCKET="${LAKE_BUCKET:-lake}"         # bucket the tables are written to (c
 KEY_NAME="${KEY_NAME:-duckpipe-key}"
 ENDPOINT="${ENDPOINT:-http://127.0.0.1:3900}"
 DUCKDB_VERSION="${DUCKDB_VERSION:-v1.5.6}" # 1.5 or newer
+LISTEN="${LISTEN:-[::]:8100}"              # the web page; use 127.0.0.1:8100 for local only
+UI_USER="${UI_USER:-admin}"                # basic-auth user for the web page
 
 SRC_BIN="${1:-}"
 SRC_CONFIG="$(dirname "${SRC_BIN:-.}")/duckpipe.yaml"   # from the repo; replaces CONFIG
@@ -44,6 +46,7 @@ die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 [[ -f $SRC_CONFIG ]] || die "$SRC_CONFIG not found: copy duckpipe.yaml next to the binary"
 command -v systemctl >/dev/null || die "systemd is required"
 command -v curl >/dev/null || die "curl is required (apt install curl)"
+command -v openssl >/dev/null || die "openssl is required (apt install openssl)"
 [[ -x $GARAGE ]] || die "$GARAGE not found: run garage-setup.sh first"
 "$GARAGE" status >/dev/null 2>&1 || die "garage is not running (systemctl status garage)"
 
@@ -133,8 +136,14 @@ AWS_EC2_METADATA_DISABLED=true
 EOF
   umask 022
 fi
-# Holds the S3 secret. systemd reads it as root, so the service itself needs no
-# access.
+new_login=
+if ! grep -q '^DUCKPIPE_UI_AUTH=' "$ENV_FILE"; then
+  log "Adding a login for the web page to $ENV_FILE"
+  new_login="$UI_USER:$(openssl rand -base64 24 | tr -d '/+=')"
+  echo "DUCKPIPE_UI_AUTH=$new_login" >>"$ENV_FILE"
+fi
+# Holds the S3 secret and the page password. systemd reads it as root, so the
+# service itself needs no access.
 chown root:root "$ENV_FILE"
 chmod 0600 "$ENV_FILE"
 
@@ -155,7 +164,7 @@ EnvironmentFile=$ENV_FILE
 # RELAY_URL and RELAY_TOKEN, if relay is installed; loads are published to it.
 EnvironmentFile=-/etc/relay-client.env
 Environment=HOME=$STATE_DIR
-ExecStart=$BIN -config $CONFIG -state-dir $STATE_DIR -duckdb $DUCKDB run
+ExecStart=$BIN -config $CONFIG -state-dir $STATE_DIR -duckdb $DUCKDB -listen $LISTEN run
 User=duckpipe
 Group=duckpipe
 StateDirectory=duckpipe
@@ -184,11 +193,22 @@ for i in {1..60}; do
   fi
   sleep 1
 done
+port=${LISTEN##*:}
+for i in {1..10}; do
+  curl -fsS "http://127.0.0.1:$port/healthz" >/dev/null 2>&1 && break
+  [[ $i -eq 10 ]] && die "the web page is not answering on port $port"
+  sleep 1
+done
+if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+  log "ufw is active: to reach the page from the LAN run 'sudo ufw allow $port/tcp'"
+fi
 
 # --- Done --------------------------------------------------------------------
+host_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
 cat <<EOF
 
 duckpipe is running.
+  Page    : http://${host_ip:-localhost}:$port   (what is loading, history, stop all)
   Config  : $CONFIG, from duckpipe/duckpipe.yaml in the repo (change it there and deploy)
   Catalog : $STATE_DIR
   Status  : sudo duckpipectl status
@@ -197,3 +217,10 @@ duckpipe is running.
   Logs    : journalctl -u duckpipe -f
   Poll now: sudo systemctl kill -s HUP duckpipe
 EOF
+if [[ -n $new_login ]]; then
+  cat <<EOF
+  Login   : ${new_login%%:*} / ${new_login#*:}   <- save this; also in $ENV_FILE
+EOF
+else
+  echo "  Login   : sudo grep DUCKPIPE_UI_AUTH $ENV_FILE"
+fi

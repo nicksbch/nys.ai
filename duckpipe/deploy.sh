@@ -8,8 +8,8 @@
 # password). Override defaults with env vars, e.g.:
 #   HOST=nicolas@192.168.1.169 SSH_PORT=2222 SOURCE_BUCKETS="home" LAKE_BUCKET=lake ./deploy.sh
 #
-# SOURCE_BUCKETS, LAKE_BUCKET, KEY_NAME, ENDPOINT and DUCKDB_VERSION are passed
-# on to install.sh. Safe to re-run to ship a new version. duckpipe.yaml (the
+# SOURCE_BUCKETS, LAKE_BUCKET, KEY_NAME, ENDPOINT, DUCKDB_VERSION, LISTEN and
+# UI_USER are passed on to install.sh. Safe to re-run to ship a new version. duckpipe.yaml (the
 # pipes) is shipped too and replaces the server's: change it here, then deploy.
 
 set -euo pipefail
@@ -44,7 +44,7 @@ scp -q -P "$SSH_PORT" "$out/duckpipe" install.sh duckpipe.yaml "$HOST:$remote/"
 
 # Forward only the settings set here, so install.sh defaults apply otherwise.
 vars=()
-for v in SOURCE_BUCKETS LAKE_BUCKET KEY_NAME ENDPOINT DUCKDB_VERSION; do
+for v in SOURCE_BUCKETS LAKE_BUCKET KEY_NAME ENDPOINT DUCKDB_VERSION LISTEN UI_USER; do
   if [[ -n ${!v:-} ]]; then vars+=("$v=$(printf %q "${!v}")"); fi
 done
 

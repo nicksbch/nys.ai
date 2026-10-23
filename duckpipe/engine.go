@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -35,7 +36,39 @@ type engine struct {
 
 	bus  *relay.Client   // nil (no-op) when relay isn't configured
 	down map[string]bool // what last failed to poll, so relay hears of it once
+
+	// What "run" is doing, for the page (ui.go).
+	mu          sync.Mutex
+	stopped     bool                    // "Stop all" on the page; "Resume" clears it
+	cancel      context.CancelCauseFunc // cancels the poll or maintenance under way
+	loading     *loading                // the batch being loaded, if any
+	maintaining time.Time               // when maintenance started, if it is running
+	pipes       map[string]pipeState    // each pipe's last poll
+	poke        chan struct{}           // starts the next poll now
 }
+
+// loading is the batch being loaded, as the page shows it.
+type loading struct {
+	Pipe    string    `json:"pipe"`
+	Table   string    `json:"table"`
+	Bucket  string    `json:"bucket"`
+	Keys    []string  `json:"keys"`
+	Bytes   int64     `json:"bytes"`
+	Started time.Time `json:"started"`
+}
+
+// pipeState is a pipe's last poll: when it ended, why it failed, and the
+// files it found that are still to be loaded.
+type pipeState struct {
+	PolledAt     time.Time `json:"polled_at"`
+	Error        string    `json:"error,omitempty"`
+	Waiting      int       `json:"waiting"`
+	WaitingBytes int64     `json:"waiting_bytes"`
+}
+
+// errStopped cancels the load or maintenance under way when "Stop all" is
+// pressed on the page.
+var errStopped = errors.New("stopped from the page")
 
 type object struct {
 	Key, ETag string
@@ -82,12 +115,14 @@ func open(ctx context.Context, cfg *config, duckdbBin, endpoint, profile, region
 	}
 
 	e := &engine{
-		bus:  relay.FromEnv(),
-		down: map[string]bool{},
-		cfg:  cfg,
-		s3:   client,
-		lake: qi(cfg.Lake.Name),
-		hist: qi(cfg.Lake.Name) + "." + qi(historySchema) + ".load_history",
+		bus:   relay.FromEnv(),
+		down:  map[string]bool{},
+		pipes: map[string]pipeState{},
+		poke:  make(chan struct{}, 1),
+		cfg:   cfg,
+		s3:    client,
+		lake:  qi(cfg.Lake.Name),
+		hist:  qi(cfg.Lake.Name) + "." + qi(historySchema) + ".load_history",
 	}
 
 	// Partitions by day of _loaded_at are cut in the session time zone, so pin
@@ -189,6 +224,9 @@ func (e *engine) cycle(ctx context.Context) (failed bool) {
 	e.polled("load history", err)
 	if err != nil {
 		log.Printf("reading load history: %v (will retry next poll)", err)
+		for _, p := range e.cfg.Pipes {
+			e.setPolled(p.Name, fmt.Errorf("reading load history: %w", err))
+		}
 		return true
 	}
 	for _, p := range e.cfg.Pipes {
@@ -200,6 +238,7 @@ func (e *engine) cycle(ctx context.Context) (failed bool) {
 			return true
 		}
 		e.polled(p.Name, err)
+		e.setPolled(p.Name, err)
 		if err != nil {
 			failed = true
 			log.Printf("%s: %v (will retry next poll)", p.Name, err)
@@ -276,6 +315,7 @@ func (e *engine) poll(ctx context.Context, p *pipe, done map[string]bool) error 
 			todo = append(todo, obj)
 		}
 	}
+	e.setWaiting(p.Name, todo)
 	if len(todo) == 0 {
 		return nil
 	}
@@ -314,6 +354,7 @@ func (e *engine) poll(ctx context.Context, p *pipe, done map[string]bool) error 
 		if err := e.loadBatch(ctx, p, batch); err != nil {
 			return err
 		}
+		e.setWaiting(p.Name, todo)
 	}
 	return nil
 }
@@ -326,7 +367,12 @@ func (e *engine) loadBatch(ctx context.Context, p *pipe, batch []object) error {
 	start := time.Now()
 	runID := newRunID()
 	e.publish("ingest", "started", runID, e.ingestData(p, batch), nil)
+	e.setLoading(p, batch, start)
 	rows, err := e.load(ctx, p, batch)
+	e.setLoading(nil, nil, time.Time{})
+	if ctx.Err() != nil {
+		err = context.Cause(ctx) // e.g. errStopped
+	}
 	data := e.ingestData(p, batch)
 	data["duration_ms"] = time.Since(start).Milliseconds()
 	if err == nil {
@@ -354,11 +400,14 @@ func (e *engine) loadBatch(ctx context.Context, p *pipe, batch []object) error {
 }
 
 // ingestData describes a batch for relay: name ("pipe: file -> table"),
-// pipe, table, files and bytes.
+// pipe, table, files and bytes. A batch of several files is named by its
+// first and last file, so batches from the same prefix can be told apart.
 func (e *engine) ingestData(p *pipe, batch []object) map[string]any {
 	name := e.url(p, batch[0])
 	if len(batch) > 1 {
-		name = fmt.Sprintf("%d files from s3://%s/%s", len(batch), p.Bucket, p.Prefix)
+		first := strings.TrimPrefix(batch[0].Key, p.Prefix)
+		last := strings.TrimPrefix(batch[len(batch)-1].Key, p.Prefix)
+		name = fmt.Sprintf("%d files from s3://%s/%s (%s … %s)", len(batch), p.Bucket, p.Prefix, first, last)
 	}
 	var size int64
 	for _, o := range batch {
@@ -511,7 +560,10 @@ func (e *engine) seen(ctx context.Context) (map[string]map[string]bool, error) {
 	return done, nil
 }
 
-func (e *engine) status(ctx context.Context, w io.Writer) error {
+// stats returns, per pipe, the files and rows loaded, the files whose latest
+// attempt failed and the last load (UTC, "2006-01-02 15:04:05"), and the 50
+// newest failed files.
+func (e *engine) stats(ctx context.Context) (map[string]row, []row, error) {
 	// A file counts as failed only if its latest attempt failed; a fixed file
 	// that loaded later doesn't.
 	latest := `(SELECT *, row_number() OVER (PARTITION BY pipe, bucket, key ORDER BY loaded_at DESC) = 1 AS latest
@@ -528,11 +580,19 @@ func (e *engine) status(ctx context.Context, w io.Writer) error {
 		ORDER BY loaded_at DESC LIMIT 50`,
 	)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	stats := map[string]row{}
 	for _, r := range res[0] {
 		stats[r.str("pipe")] = r
+	}
+	return stats, res[1], nil
+}
+
+func (e *engine) status(ctx context.Context, w io.Writer) error {
+	stats, failed, err := e.stats(ctx)
+	if err != nil {
+		return err
 	}
 
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
@@ -549,7 +609,7 @@ func (e *engine) status(ctx context.Context, w io.Writer) error {
 	}
 	tw.Flush()
 
-	for i, r := range res[1] {
+	for i, r := range failed {
 		if i == 0 {
 			fmt.Fprintln(w, "\nFailed files (newest first; fix them or the pipe, then run \"duckpipe retry\"):")
 		}
@@ -558,23 +618,33 @@ func (e *engine) status(ctx context.Context, w io.Writer) error {
 	return nil
 }
 
+// historyRows returns the load history, newest first: every file loaded or
+// failed, optionally for one pipe only, at most limit rows (0: all). at is
+// UTC, "2006-01-02 15:04:05".
+func (e *engine) historyRows(ctx context.Context, pipe string, limit int) ([]row, error) {
+	q := `SELECT strftime(loaded_at, '%Y-%m-%d %H:%M:%S') AS at, pipe, 's3://' || bucket || '/' || key AS file,
+			coalesce(target, '-') AS target, status, rows, size, error
+		FROM ` + e.hist
+	if pipe != "" {
+		q += " WHERE pipe = " + ql(pipe)
+	}
+	q += " ORDER BY loaded_at DESC, key"
+	if limit > 0 {
+		q += fmt.Sprintf(" LIMIT %d", limit)
+	}
+	return e.duck.query(ctx, q)
+}
+
 // history lists every file loaded or failed, newest first, optionally for
 // one pipe only.
 func (e *engine) history(ctx context.Context, w io.Writer, pipe string) error {
-	where := ""
-	if pipe != "" {
-		where = " WHERE pipe = " + ql(pipe)
-	}
-	res, err := e.duck.run(ctx,
-		`SELECT strftime(loaded_at, '%Y-%m-%d %H:%M:%S') AS at, pipe, 's3://' || bucket || '/' || key AS file,
-			coalesce(target, '-') AS target, status, rows
-		FROM `+e.hist+where+` ORDER BY loaded_at DESC, key`)
+	rows, err := e.historyRows(ctx, pipe, 0)
 	if err != nil {
 		return err
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "LOADED AT\tPIPE\tFILE\tTARGET\tSTATUS\tROWS")
-	for _, r := range res[0] {
+	for _, r := range rows {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%d\n", r.str("at"), r.str("pipe"), r.str("file"),
 			r.str("target"), r.str("status"), r.int("rows"))
 	}

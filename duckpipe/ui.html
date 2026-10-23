@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>duckpipe</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --border: rgba(11,11,11,0.10);
+  --text: #0b0b0b; --text-2: #52514e; --muted: #7a7974;
+  --grid: #e1e0d9; --axis: #c3c2b7; --accent: #2a78d6; --track: #ebeae4;
+  --good: #0ca30c; --warning: #fab219; --critical: #d03b3b;
+  --good-text: #006300; --warning-text: #8a5a00; --critical-text: #b22a2a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --border: rgba(255,255,255,0.10);
+    --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e88;
+    --grid: #2c2c2a; --axis: #383835; --accent: #3987e5; --track: #2c2c2a;
+    --good-text: #0ca30c; --warning-text: #fab219; --critical-text: #e66767;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --border: rgba(255,255,255,0.10);
+  --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e88;
+  --grid: #2c2c2a; --axis: #383835; --accent: #3987e5; --track: #2c2c2a;
+  --good-text: #0ca30c; --warning-text: #fab219; --critical-text: #e66767;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 48px; }
+header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+header .spacer { flex: 1; }
+h1 { font-size: 20px; margin: 0; }
+h2 { font-size: 13px; font-weight: 600; color: var(--text-2); margin: 0; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; min-width: 0; }
+.card-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; margin-bottom: 10px; }
+.sub { color: var(--muted); font-size: 12px; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.empty { color: var(--muted); font-size: 13px; padding: 6px 0; }
+.error-line { color: var(--critical-text); margin: 8px 0; overflow-wrap: anywhere; }
+.live { font-size: 13px; color: var(--muted); }
+.live::before { content: "●"; margin-right: 4px; color: var(--muted); }
+.live.on::before { color: var(--good); }
+.live.on.loading::before { color: var(--accent); }
+.live.on.stopped::before { color: var(--critical); }
+
+button { font: inherit; font-size: 12px; font-weight: 600; color: var(--accent); background: transparent; border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer; white-space: nowrap; }
+button:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+button.primary { color: #fff; background: var(--accent); border-color: var(--accent); font-size: 13px; padding: 6px 14px; }
+button.stop { color: #fff; background: var(--critical); border-color: var(--critical); font-size: 13px; padding: 6px 14px; }
+button.stop:hover:not(:disabled) { background: color-mix(in srgb, var(--critical) 85%, #000); }
+button:disabled { opacity: .45; cursor: default; }
+select { font: inherit; font-size: 12px; color: var(--text); background: var(--page); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; }
+
+.banner { border-color: color-mix(in srgb, var(--critical) 45%, transparent); background: color-mix(in srgb, var(--critical) 6%, var(--surface)); }
+.banner h2 { color: var(--critical-text); }
+.busy { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.bar { height: 6px; background: var(--track); border-radius: 3px; overflow: hidden; margin-top: 8px; }
+.bar > div { height: 100%; width: 30%; background: var(--accent); border-radius: 3px; animation: slide 1.4s ease-in-out infinite; }
+@keyframes slide { from { margin-left: -30%; } to { margin-left: 100%; } }
+.files { margin: 8px 0 0; padding: 0; list-style: none; max-height: 220px; overflow-y: auto; }
+.files li { overflow-wrap: anywhere; padding: 1px 0; }
+
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; color: var(--text-2); font-weight: 600; border-bottom: 1px solid var(--axis); padding: 6px 8px; white-space: nowrap; }
+td { border-bottom: 1px solid var(--grid); padding: 6px 8px; vertical-align: top; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nowrap { white-space: nowrap; }
+td.path { overflow-wrap: anywhere; min-width: 160px; }
+.st-loaded { color: var(--good-text); }
+.st-failed { color: var(--critical-text); }
+.st-waiting { color: var(--warning-text); }
+.err { color: var(--critical-text); font-size: 12px; overflow-wrap: anywhere; }
+@media (max-width: 700px) { .opt { display: none; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>duckpipe</h1>
+    <span class="live" id="live">connecting</span>
+    <span class="sub" id="poll-every"></span>
+    <span class="spacer"></span>
+    <button class="stop" id="stop" hidden>Stop all</button>
+    <button class="primary" id="resume" hidden>Resume</button>
+  </header>
+  <div class="error-line" id="action-error" hidden></div>
+
+  <section class="card banner" id="stopped-card" hidden>
+    <h2 id="stopped-title">Stopped</h2>
+    <div class="sub" id="stopped-text"></div>
+  </section>
+
+  <section class="card" id="loading-card" hidden>
+    <div class="busy">
+      <h2>Loading</h2>
+      <span class="mono" id="loading-what"></span>
+      <span class="sub" id="loading-info"></span>
+    </div>
+    <div class="bar"><div></div></div>
+    <ul class="files mono" id="loading-files"></ul>
+  </section>
+
+  <section class="card" id="maint-card" hidden>
+    <div class="busy">
+      <h2>Maintenance</h2>
+      <span class="sub" id="maint-info"></span>
+    </div>
+    <div class="bar"><div></div></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Pipes</h2>
+      <span class="sub">Waiting: files the last poll found that aren't loaded yet. Totals come from the load history.</span>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Pipe</th><th class="opt">Source → table</th><th class="num">Waiting</th><th class="num">Files</th><th class="num">Rows</th><th class="num">Failed</th><th>Last load</th><th>Last poll</th></tr></thead>
+      <tbody id="pipes"></tbody>
+    </table></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>History</h2>
+      <select id="history-pipe"><option value="">all pipes</option></select>
+      <button id="history-refresh">Refresh</button>
+      <span class="sub" id="history-note"></span>
+    </div>
+    <div class="error-line" id="history-error" hidden></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>When</th><th>Pipe</th><th>File</th><th class="opt">Table</th><th>Status</th><th class="num">Rows</th><th class="num opt">Size</th></tr></thead>
+      <tbody id="history"></tbody>
+    </table></div>
+  </section>
+  <div class="error-line" id="fetch-error" hidden></div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const HEADERS = {'Content-Type': 'application/json', 'X-Duckpipe': '1'};
+
+// el builds an element; children are nodes or strings (always set as text).
+function el(tag, attrs, ...children) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) if (v != null) e.setAttribute(k, v);
+  for (const c of children) if (c != null) e.append(c);
+  return e;
+}
+
+async function api(path, body) {
+  const opts = body === undefined ? {cache: 'no-store'}
+    : {method: 'POST', headers: HEADERS, body: JSON.stringify(body)};
+  const r = await fetch(path, opts);
+  const out = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(out.error || r.status + ' ' + r.statusText);
+  return out;
+}
+
+function fmtBytes(n) {
+  if (n >= 1e9) return (n / 1e9).toFixed(2) + ' GB';
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + ' MB';
+  if (n >= 1e3) return (n / 1e3).toFixed(0) + ' kB';
+  return n + ' B';
+}
+const fmtNum = n => Number(n).toLocaleString();
+function fmtAge(t) {
+  const s = Math.max(0, (Date.now() - new Date(t)) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.round(s / 60) + 'm ago';
+  if (s < 172800) return Math.floor(s / 3600) + 'h ago';
+  return Math.round(s / 86400) + 'd ago';
+}
+function fmtDur(s) {
+  s = Math.round(s);
+  const m = Math.floor(s / 60), r = s % 60;
+  return m ? m + 'm' + String(r).padStart(2, '0') + 's' : r + 's';
+}
+// The load history's times are UTC, "2006-01-02 15:04:05".
+const utc = s => s.replace(' ', 'T') + 'Z';
+const when = t => el('td', {class: 'nowrap', title: new Date(t).toLocaleString()}, fmtAge(t));
+
+function showError(e) {
+  $('action-error').textContent = e ? e.message : '';
+  $('action-error').hidden = !e;
+}
+
+// act runs a button's action, disabling it meanwhile, then refreshes.
+async function act(btn, path) {
+  btn.disabled = true;
+  showError(null);
+  try { await api(path, {}); } catch (e) { showError(e); }
+  btn.disabled = false;
+  poll();
+}
+
+// --- Render -------------------------------------------------------------------
+
+let state = null, hist = null;
+
+function renderTop(s) {
+  const stopped = s.state === 'stopped' || s.state === 'stopping';
+  $('stop').hidden = stopped;
+  $('resume').hidden = !stopped;
+  $('poll-every').textContent = stopped ? '' : 'polls every ' + s.poll;
+  $('stopped-card').hidden = !stopped;
+  $('stopped-title').textContent = s.state === 'stopping' ? 'Stopping' : 'Stopped';
+  $('stopped-text').textContent = s.state === 'stopping'
+    ? 'Ending the load under way; its transaction is rolled back.'
+    : 'Nothing is polled or loaded until you resume. Files from a stopped load weren\'t loaded and are loaded again then. Restarting the service also resumes.';
+
+  const l = s.loading;
+  $('loading-card').hidden = !l;
+  if (l) {
+    $('loading-what').textContent = l.pipe + ' → ' + l.table;
+    $('loading-info').textContent = l.keys.length + (l.keys.length === 1 ? ' file · ' : ' files · ') + fmtBytes(l.bytes) + ' · ' + fmtDur((Date.now() - new Date(l.started)) / 1000);
+    $('loading-files').replaceChildren(...l.keys.map(k => el('li', {}, 's3://' + l.bucket + '/' + k)));
+  }
+  $('maint-card').hidden = !s.maintaining;
+  if (s.maintaining) $('maint-info').textContent = 'merging small files, dropping old snapshots · ' + fmtDur((Date.now() - new Date(s.maintaining)) / 1000);
+}
+
+function renderPipes() {
+  if (!state) return;
+  const stats = Object.fromEntries(((hist && hist.stats) || []).map(x => [x.pipe, x]));
+  $('pipes').replaceChildren(...state.pipes.map(p => {
+    const st = stats[p.name];
+    const n = v => el('td', {class: 'num'}, st ? fmtNum(v) : '–');
+    const polled = p.polled_at && !p.polled_at.startsWith('0001-');
+    return el('tr', {},
+      el('td', {class: 'nowrap'}, p.name),
+      el('td', {class: 'path opt'}, el('div', {class: 'mono'}, p.source), el('div', {class: 'mono sub'}, '→ ' + p.table)),
+      el('td', {class: 'num' + (p.waiting ? ' st-waiting' : '')}, polled ? (p.waiting ? fmtNum(p.waiting) + ' · ' + fmtBytes(p.waiting_bytes) : '0') : '–'),
+      n(st && st.files), n(st && st.rows),
+      el('td', {class: 'num' + (st && st.failed ? ' st-failed' : '')}, st ? fmtNum(st.failed) : '–'),
+      st && st.last ? when(utc(st.last)) : el('td', {}, '–'),
+      el('td', {}, polled ? fmtAge(p.polled_at) : 'not yet', p.error ? el('div', {class: 'err'}, p.error) : null));
+  }));
+}
+
+function renderHistory() {
+  if (!hist) return;
+  $('history-note').textContent = hist.history.length >= hist.limit
+    ? 'Newest ' + hist.limit + '. The rest: sudo duckpipectl history [pipe].' : 'Every file loaded or failed, newest first.';
+  const rows = hist.history.map(h => el('tr', {},
+    when(utc(h.at)),
+    el('td', {class: 'nowrap'}, h.pipe),
+    el('td', {class: 'path'}, el('div', {class: 'mono'}, h.file), h.error ? el('div', {class: 'err'}, h.error) : null),
+    el('td', {class: 'mono opt'}, h.target),
+    el('td', {class: 'nowrap st-' + h.status}, h.status),
+    el('td', {class: 'num'}, fmtNum(h.rows)),
+    el('td', {class: 'num opt'}, fmtBytes(h.size))));
+  $('history').replaceChildren(...(rows.length ? rows
+    : [el('tr', {}, el('td', {colspan: 7, class: 'empty'}, 'Nothing loaded yet.'))]));
+}
+
+function renderPipeFilter(pipes) {
+  const sel = $('history-pipe'), names = pipes.map(p => p.name);
+  if ([...sel.options].slice(1).map(o => o.value).join('\n') === names.join('\n')) return;
+  const cur = sel.value;
+  sel.replaceChildren(el('option', {value: ''}, 'all pipes'), ...names.map(n => el('option', {value: n}, n)));
+  sel.value = cur;
+}
+
+// --- Polling ------------------------------------------------------------------
+// The state (from memory) every 2 s while loading, every 5 s otherwise. The
+// history (a query on the lake) every minute, after each load, and on demand.
+// Both pause while the tab is hidden.
+
+let timer = null, histTimer = null, histBusy = false;
+
+async function poll() {
+  clearTimeout(timer);
+  try {
+    const s = await api('api/state');
+    const finished = state && state.loading && !s.loading;
+    state = s;
+    renderTop(s);
+    renderPipeFilter(s.pipes);
+    renderPipes();
+    if (finished) loadHistory();
+    $('fetch-error').hidden = true;
+    $('live').className = 'live on ' + (s.state === 'stopped' || s.state === 'stopping' ? 'stopped' : s.loading ? 'loading' : '');
+    $('live').textContent = s.state;
+  } catch (e) {
+    $('fetch-error').textContent = 'Could not load the state: ' + e.message;
+    $('fetch-error').hidden = false;
+    $('live').className = 'live';
+    $('live').textContent = 'reconnecting';
+  }
+  if (!document.hidden) timer = setTimeout(poll, state && (state.loading || state.state === 'stopping') ? 2000 : 5000);
+}
+
+async function loadHistory() {
+  clearTimeout(histTimer);
+  if (histBusy) return;
+  histBusy = true;
+  $('history-refresh').disabled = true;
+  try {
+    const pipe = $('history-pipe').value;
+    hist = await api('api/history' + (pipe ? '?pipe=' + encodeURIComponent(pipe) : ''));
+    renderPipes();
+    renderHistory();
+    $('history-error').hidden = true;
+  } catch (e) {
+    $('history-error').textContent = 'Could not read the load history: ' + e.message;
+    $('history-error').hidden = false;
+  }
+  histBusy = false;
+  $('history-refresh').disabled = false;
+  if (!document.hidden) histTimer = setTimeout(loadHistory, 60000);
+}
+
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { poll(); loadHistory(); } });
+$('history-pipe').onchange = loadHistory;
+$('history-refresh').onclick = loadHistory;
+$('stop').onclick = () => {
+  if (!confirm('Stop all loading?\nThe load under way is stopped and rolled back, and nothing is polled until you press Resume.')) return;
+  act($('stop'), 'api/stop');
+};
+$('resume').onclick = () => act($('resume'), 'api/resume');
+
+poll();
+loadHistory();
+</script>
+</body>
+</html>

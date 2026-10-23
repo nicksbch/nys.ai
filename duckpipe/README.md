@@ -45,6 +45,8 @@ you can also use there to query the tables.
 
 - **Monitoring:** loads and failures are published to [relay](../relay) when
   it is installed, and vigil reads them from there (see below).
+- **Page:** a web page shows what is loading, the files waiting and the load
+  history, and can stop all loading (see [The page](#the-page)).
 
 Garage can't send notifications when a file arrives, so duckpipe lists each
 prefix every 30 seconds (`poll`). `sudo systemctl kill -s HUP duckpipe` makes it
@@ -58,6 +60,8 @@ look right away.
 | `engine.go`              | Listing S3, loading files, the load history, status, retry, maintenance       |
 | `duck.go`                | Runs SQL scripts with the `duckdb` CLI and reads their results                |
 | `config.go`              | The config file                                                               |
+| `ui.go`                  | The web page's server: JSON API, stop all, resume                             |
+| `ui.html`                | The page (plain HTML and JavaScript, built into the binary)                   |
 | `duckpipe.yaml`          | The server's config (the pipes), with every setting explained. Deployed as is |
 | `deploy.sh`              | Run on your Mac: builds the binary and installs it on the server              |
 | `install.sh`             | Run on the server by `deploy.sh`: installs duckpipe, the DuckDB CLI, key, config and service |
@@ -171,6 +175,8 @@ AWS_ENDPOINT_URL=http://192.168.1.169:3900   # this is the default
 | `-region`       | from env or profile, else `garage`                    | S3 region                                     |
 | `-profile`      |                                                       | Profile name from `~/.aws`                    |
 | `-state-dir`    | `$DUCKPIPE_STATE_DIR`, else DuckDB's own (`~/.duckdb`) | Where DuckDB keeps extensions and spill files |
+| `-listen`       | `127.0.0.1:8100`                                      | Address of the page (`run` only); empty for none |
+| `-auth`         | `$DUCKPIPE_UI_AUTH`                                   | Basic auth for the page, as `user:pass`; empty for none |
 
 DuckDB downloads its `httpfs`, `ducklake` and `sqlite` extensions on first use,
 so the first run needs internet access.
@@ -194,6 +200,8 @@ with `install.sh` and runs that with `sudo`.
 | `KEY_NAME`       | `duckpipe-key`          | Name of the Garage key duckpipe uses                       |
 | `ENDPOINT`       | `http://127.0.0.1:3900` | S3 endpoint, as seen from the server                       |
 | `DUCKDB_VERSION` | `v1.5.6`                | DuckDB CLI release to install (1.5 or newer)               |
+| `LISTEN`         | `[::]:8100`             | The page; `127.0.0.1:8100` for local only                  |
+| `UI_USER`        | `admin`                 | Basic-auth user for the page (first install only)          |
 
 ### What `install.sh` does (on the server)
 
@@ -210,10 +218,12 @@ with `install.sh` and runs that with `sudo`.
    the server: if it doesn't load, the deploy stops before anything is
    replaced and duckpipe keeps running as it was. On the first run only, it
    writes `/etc/duckpipe.env` (the key, root only); later runs leave it
-   alone.
+   alone, except to add a login for the page (`DUCKPIPE_UI_AUTH`) if there
+   isn't one.
 6. Writes `/etc/systemd/system/duckpipe.service` with the same hardening as
    `garage.service`, then enables and restarts it.
-7. Waits until duckpipe is watching. If it doesn't start, it shows the log.
+7. Waits until duckpipe is watching and the page answers. If it doesn't
+   start, it shows the log.
 
 ## After deploying
 
@@ -221,6 +231,7 @@ with `install.sh` and runs that with `sudo`.
   (`ONLY=duckpipe ../deploy-all.sh`). Don't edit `/etc/duckpipe.yaml` on the
   server: the next deploy replaces it. A pipe's bucket must be one of
   `SOURCE_BUCKETS`, or duckpipe's key can't read it.
+- **Page:** `http://<server>:8100`; login: `sudo grep DUCKPIPE_UI_AUTH /etc/duckpipe.env`
 - **Status:** `sudo duckpipectl status`
 - **Retry failed files:** `sudo duckpipectl retry [pipe]`
 - **Load history:** `sudo duckpipectl history [pipe]`
@@ -232,6 +243,30 @@ with `install.sh` and runs that with `sudo`.
 Use `duckpipectl` rather than running `duckpipe` as root: it runs as the
 service's user with the service's key, so it can't leave root-owned catalog
 files behind that the service can't open.
+
+## The page
+
+`duckpipe run` serves a page on `-listen` (port 8100 on the server, behind a
+login), also linked from [home](../home):
+
+- **Loading:** the batch being loaded now: pipe, table, its files, size and
+  how long it has been running. Maintenance shows too while it runs.
+- **Pipes:** per pipe, the files the last poll found that aren't loaded yet
+  (waiting), the files and rows loaded, the failed files, the last load, and
+  the last poll, with its error if it failed.
+- **History:** the newest 500 rows of the load history, for all pipes or
+  one, with the error of each failed file. The rest:
+  `sudo duckpipectl history [pipe]`.
+- **Stop all:** stops the load under way right away (its `duckdb` process is
+  killed, so its transaction is rolled back and nothing of it is kept) and
+  stops polling until **Resume**. The stopped files aren't marked failed:
+  they are loaded again after Resume. Maintenance under way is stopped too.
+  A stopped load is published to relay as `failed`, with the error
+  `stopped from the page`, so vigil shows that it was stopped.
+
+Being stopped is kept in memory only: restarting the service (or a deploy)
+resumes loading. The page refreshes itself every few seconds. Pipes come from
+`duckpipe.yaml` and can't be changed here.
 
 ## relay and vigil
 
@@ -248,7 +283,9 @@ When `RELAY_URL` is set or `/etc/relay-client.env` exists (relay's
 | `duckpipe.poll`   | `ok`      | It can be read again                                              |
 
 `ingest` events share a `run_id` per batch, and their `data` has `name`
-(`pipe: file -> table`), `pipe`, `table`, `files` and `bytes`. `poll`
+(`pipe: file -> table`; for a batch of several files,
+`pipe: 50 files from s3://bucket/prefix/ (first … last) -> table`), `pipe`,
+`table`, `files` and `bytes`. `poll`
 events are sent when the state changes, not on every poll, so an outage is
 one event. Each failure raises a vigil alert. For an alert when nothing has
 loaded for a while, deploy vigil with e.g. `EXPECT="duckpipe/ingest=840h"`

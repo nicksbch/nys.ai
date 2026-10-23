@@ -74,7 +74,7 @@ vars() {
     vigil) echo "LISTEN DISKS EXPECT UI_USER WEBHOOK EXTRA_ARGS" ;;
     relay) echo "LISTEN EXTRA_ARGS" ;;
     preprocessor) echo "BUCKETS KEY_NAME ENDPOINT LISTEN UI_USER" ;;
-    duckpipe) echo "SOURCE_BUCKETS LAKE_BUCKET KEY_NAME ENDPOINT DUCKDB_VERSION" ;;
+    duckpipe) echo "SOURCE_BUCKETS LAKE_BUCKET KEY_NAME ENDPOINT DUCKDB_VERSION LISTEN UI_USER" ;;
     ducklake) echo "LAKE_BUCKET KEY_NAME PG_DB PG_USER S3_ENDPOINT DUCKDB_VERSION LAN_CIDR HOST_IP" ;;
     garage-ui) echo "LISTEN BUCKETS KEY_NAME UI_USER ENDPOINT" ;;
     lake-ui) echo "LISTEN LAKE_BUCKET KEY_NAME PG_ROLE UI_USER ENDPOINT" ;;
@@ -186,7 +186,7 @@ for u in garage vigil relay preprocessor url-to-bucket mcp-hub foreman analyst d
 done
 # name:port[/path], /healthz by default. garage-ui and lake-ui have no health
 # endpoint and ask for a login, so a 401 counts as up.
-for h in vigil:8090 relay:8091 url-to-bucket:8093 preprocessor:8099 mcp-hub:8094 foreman:8096 semantic:8097 analyst:8098 home:8000 garage-ui:8080/ lake-ui:8092/ llama-server:8081/health; do
+for h in vigil:8090 relay:8091 url-to-bucket:8093 preprocessor:8099 duckpipe:8100 mcp-hub:8094 foreman:8096 semantic:8097 analyst:8098 home:8000 garage-ui:8080/ lake-ui:8092/ llama-server:8081/health; do
   name=${h%%:*} port=${h#*:} path=/healthz
   [[ $port == */* ]] && path=/${port#*/} port=${port%%/*}
   code=$(curl -s -o /dev/null -m 3 -w '%{http_code}' "http://127.0.0.1:$port$path" 2>/dev/null)

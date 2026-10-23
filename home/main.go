@@ -36,7 +36,7 @@ import (
 //go:embed index.html
 var indexHTML []byte
 
-const defaultServices = "vigil=8090 relay=8091/ui garage-ui=8080 lake-ui=8092 url-to-bucket=8093 preprocessor=8099 foreman=8096/ui analyst=8098"
+const defaultServices = "vigil=8090 relay=8091/ui garage-ui=8080 lake-ui=8092 url-to-bucket=8093 preprocessor=8099 duckpipe=8100 foreman=8096/ui analyst=8098"
 
 type service struct {
 	Name string `json:"name"`

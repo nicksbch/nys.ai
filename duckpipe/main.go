@@ -25,6 +25,11 @@
 //	duckpipe [-config duckpipe.yaml] check     # check the config only; nothing is opened
 //
 // SIGHUP makes a running duckpipe poll immediately.
+//
+// "run" serves a web page on -listen (default 127.0.0.1:8100; empty for
+// none): what is being loaded, the files waiting, the load history, and "Stop
+// all", which stops the load under way and pauses polling until "Resume". Set
+// -auth (or DUCKPIPE_UI_AUTH) to user:pass to require a login.
 package main
 
 import (
@@ -54,6 +59,8 @@ func main() {
 	region := fs.String("region", "", "S3 region (default: from env/profile, else garage)")
 	duckdbBin := fs.String("duckdb", envOr("DUCKPIPE_DUCKDB", "duckdb"), "duckdb CLI (1.5 or newer) to run loads with")
 	stateDir := fs.String("state-dir", os.Getenv("DUCKPIPE_STATE_DIR"), "where DuckDB keeps extensions and spill files (default: DuckDB's own)")
+	listen := fs.String("listen", "127.0.0.1:8100", "address of the web page (run only); empty for none")
+	auth := fs.String("auth", os.Getenv("DUCKPIPE_UI_AUTH"), "require HTTP basic auth on the page, as user:pass")
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Load new files from S3 into DuckLake tables, continuously.\n\n"+
 			"usage: %s [flags] run | once | status | retry [pipe] | history [pipe] | check\n\n", fs.Name())
@@ -95,6 +102,9 @@ func main() {
 
 		switch pos[0] {
 		case "run":
+			if *listen != "" {
+				go e.serve(ctx, *listen, *auth)
+			}
 			return e.run(ctx)
 		case "once":
 			if e.cycle(ctx) {
@@ -128,8 +138,9 @@ func main() {
 	}
 }
 
-// run polls all pipes every cfg.Poll until ctx is cancelled. SIGHUP starts the
-// next poll right away.
+// run polls all pipes every cfg.Poll until ctx is cancelled. SIGHUP (or
+// "Resume" on the page) starts the next poll right away. While stopped from
+// the page, nothing is polled or loaded.
 func (e *engine) run(ctx context.Context) error {
 	hup := make(chan os.Signal, 1)
 	signal.Notify(hup, syscall.SIGHUP)
@@ -138,12 +149,23 @@ func (e *engine) run(ctx context.Context) error {
 	log.Printf("watching %d pipe(s), polling every %s", len(e.cfg.Pipes), e.cfg.Poll.Duration)
 	var lastMaint time.Time
 	for {
-		e.cycle(ctx)
-		if m := e.cfg.Maintenance; m.Every.Duration > 0 && time.Since(lastMaint) >= m.Every.Duration && ctx.Err() == nil {
-			if err := e.maintain(ctx); err != nil {
-				log.Printf("maintenance: %v", err)
+		if wctx, done := e.work(ctx); wctx != nil {
+			e.cycle(wctx)
+			if m := e.cfg.Maintenance; m.Every.Duration > 0 && time.Since(lastMaint) >= m.Every.Duration && wctx.Err() == nil {
+				e.setMaintaining(true)
+				if err := e.maintain(wctx); err != nil {
+					if wctx.Err() != nil {
+						err = context.Cause(wctx)
+					}
+					log.Printf("maintenance: %v", err)
+				}
+				e.setMaintaining(false)
+				// Maintenance stopped from the page runs again on the next poll.
+				if wctx.Err() == nil {
+					lastMaint = time.Now()
+				}
 			}
-			lastMaint = time.Now()
+			done()
 		}
 		select {
 		case <-ctx.Done():
@@ -151,6 +173,7 @@ func (e *engine) run(ctx context.Context) error {
 			return nil
 		case <-hup:
 			log.Printf("SIGHUP: polling now")
+		case <-e.poke:
 		case <-time.After(e.cfg.Poll.Duration):
 		}
 	}
