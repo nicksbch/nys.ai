@@ -6,3 +6,21 @@ jobs:
       - topic: duckpipe.ingest
         type: ok
         data: {table: lake.uk.price_paid}
+
+  # Test the crime staging views after duckpipe loads new data.police.uk files
+  # (views read the new rows by themselves). A new archive brings hundreds of
+  # files, so wait for the loads to go quiet.
+  - name: crime
+    select: source:uk.crime_street+ source:uk.crime_outcomes+ source:uk.crime_stop_and_search+
+    on:
+      - topic: duckpipe.ingest
+        type: ok
+        data: {table: lake.uk.crime_street}
+      - topic: duckpipe.ingest
+        type: ok
+        data: {table: lake.uk.crime_outcomes}
+      - topic: duckpipe.ingest
+        type: ok
+        data: {table: lake.uk.crime_stop_and_search}
+    debounce: 5m
+    max_wait: 1h

@@ -4,5 +4,5 @@ lake:
   data_path: s3://lake/
 schema: analytics
 models:
-  staging: {schema: staging, materialized: table, tags: [staging]}
+  staging: {schema: staging, materialized: view, tags: [staging]}
   marts: {schema: marts, materialized: table, tags: [marts]}

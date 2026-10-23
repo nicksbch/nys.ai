@@ -1,0 +1,11 @@
+models:
+  - name: stg_crime_outcomes
+    columns:
+      - name: crime_id
+        tests: [not_null]
+      - name: month
+        tests: [not_null]
+      - name: falls_within
+        tests: [not_null]
+      - name: outcome_type
+        tests: [not_null]
