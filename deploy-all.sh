@@ -19,6 +19,7 @@
 #   mcp-hub        mcp-hub/deploy.sh               MCP gateway; after vigil and semantic: copies their MCP tokens
 #   foreman        foreman/deploy.sh               agents; after mcp-hub: copies its token
 #   analyst        analyst/deploy.sh               chat over the semantic layer; after mcp-hub: copies its token
+#   atlas          atlas/deploy.sh                 how the services are wired; after the services whose configs it reads
 #   home           home/deploy.sh                  homepage linking the UIs above
 #   llama *        linux-scripts/llama-setup.sh    pulls and rebuilds llama.cpp (slow)
 #
@@ -56,7 +57,7 @@ SSH_PORT="${SSH_PORT:-2222}"
 ONLY="${ONLY:-}"
 SKIP="${SKIP:-}"
 
-ORDER=(garage relay vigil preprocessor duckpipe ducklake garage-ui lake-ui lakeshape semantic url-to-bucket mcp-hub foreman analyst home llama)
+ORDER=(garage relay vigil preprocessor duckpipe ducklake garage-ui lake-ui lakeshape semantic url-to-bucket mcp-hub foreman analyst atlas home llama)
 OPT_IN=(duckpipe llama)   # skipped unless named in ONLY
 
 log() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
@@ -84,6 +85,7 @@ vars() {
     mcp-hub) echo "LISTEN EXTRA_ARGS" ;;
     foreman) echo "LISTEN EXTRA_ARGS" ;;
     analyst) echo "LISTEN EXTRA_ARGS" ;;
+    atlas) echo "LISTEN LINKS UI_USER" ;;
     home) echo "LISTEN SERVICES" ;;
     llama) echo "REF MODEL_REPO MODEL_FILE HOST PORT API_KEY CTX THREADS" ;;
   esac
@@ -179,14 +181,14 @@ done
 log "Status on $HOST"
 ssh -p "$SSH_PORT" "$HOST" 'bash -s' <<'EOF'
 row() { printf '  %-14s %s\n' "$1" "$2"; }
-for u in garage vigil relay preprocessor url-to-bucket mcp-hub foreman analyst duckpipe lakeshape semantic postgresql garage-ui lake-ui home llama-server; do
+for u in garage vigil relay preprocessor url-to-bucket mcp-hub foreman analyst atlas duckpipe lakeshape semantic postgresql garage-ui lake-ui home llama-server; do
   state=$(systemctl is-active "$u" 2>/dev/null)
   systemctl cat "$u" >/dev/null 2>&1 || state="not installed"
   row "$u" "$state"
 done
 # name:port[/path], /healthz by default. garage-ui and lake-ui have no health
 # endpoint and ask for a login, so a 401 counts as up.
-for h in vigil:8090 relay:8091 url-to-bucket:8093 preprocessor:8099 duckpipe:8100 mcp-hub:8094 foreman:8096 semantic:8097 analyst:8098 home:8000 garage-ui:8080/ lake-ui:8092/ llama-server:8081/health; do
+for h in vigil:8090 relay:8091 url-to-bucket:8093 preprocessor:8099 duckpipe:8100 mcp-hub:8094 foreman:8096 semantic:8097 analyst:8098 atlas:8101 home:8000 garage-ui:8080/ lake-ui:8092/ llama-server:8081/health; do
   name=${h%%:*} port=${h#*:} path=/healthz
   [[ $port == */* ]] && path=/${port#*/} port=${port%%/*}
   code=$(curl -s -o /dev/null -m 3 -w '%{http_code}' "http://127.0.0.1:$port$path" 2>/dev/null)

@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>atlas</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --border: rgba(11,11,11,0.12); --hover: rgba(11,11,11,0.28);
+  --text: #0b0b0b; --text-2: #52514e; --muted: #7a7974; --line: rgba(11,11,11,0.30); --line-hi: #2a62c9;
+  --good: #0ca30c; --critical: #d03b3b; --warn: #b7791f; --unknown: #c3c2b7;
+  --critical-text: #b22a2a; --critical-bg: rgba(208,59,59,0.08); --hi-bg: rgba(42,98,201,0.08);
+  --code: #f1f0ec;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --border: rgba(255,255,255,0.12); --hover: rgba(255,255,255,0.3);
+    --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e88; --line: rgba(255,255,255,0.28); --line-hi: #6f9cf0;
+    --unknown: #383835; --critical-text: #e66767; --critical-bg: rgba(230,103,103,0.10); --hi-bg: rgba(111,156,240,0.12);
+    --code: #141413;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --border: rgba(255,255,255,0.12); --hover: rgba(255,255,255,0.3);
+  --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e88; --line: rgba(255,255,255,0.28); --line-hi: #6f9cf0;
+  --unknown: #383835; --critical-text: #e66767; --critical-bg: rgba(230,103,103,0.10); --hi-bg: rgba(111,156,240,0.12);
+  --code: #141413;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { padding: 16px 16px 48px; }
+header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+h1 { font-size: 20px; margin: 0; }
+.sub { color: var(--muted); font-size: 13px; }
+.sub.bad { color: var(--critical-text); }
+nav { display: flex; gap: 4px; }
+nav button, .btn { font: inherit; font-size: 13px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; }
+nav button[aria-selected="true"] { border-color: var(--hover); font-weight: 600; }
+input[type=search] { font: inherit; font-size: 13px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); flex: 0 1 260px; min-width: 120px; }
+.grow { flex: 1; }
+code, pre { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+#problems { margin-bottom: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+#problems summary { padding: 8px 12px; cursor: pointer; font-weight: 600; }
+#problems.has summary { color: var(--critical-text); }
+#problems ul { margin: 0; padding: 0 12px 10px 28px; }
+#problems li { margin: 2px 0; }
+#problems code { color: var(--muted); }
+
+.legend { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: 12px; margin-bottom: 8px; align-items: center; }
+.legend svg { vertical-align: middle; margin-right: 4px; }
+
+#wrap { position: relative; overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--page); }
+#canvas { position: relative; }
+#edges { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
+.lines path { fill: none; stroke: var(--line); stroke-width: 1.4; }
+.lines path.files { stroke-width: 1.8; }
+.lines path.table { stroke-width: 1; }
+.lines path.event { stroke-dasharray: 6 4; }
+.lines path.tools { stroke-dasharray: 1.5 3.5; stroke-linecap: round; stroke-width: 1.8; }
+.lines path.observed { opacity: 0.45; stroke-width: 2.4; }
+.lines path.failed { stroke: var(--critical); }
+.lines path.hi { stroke: var(--line-hi); opacity: 1; }
+.lines path.dim { opacity: 0.12; }
+.lines text { font-size: 11px; fill: var(--text-2); paint-order: stroke; stroke: var(--page); stroke-width: 4px; }
+.node { position: absolute; width: 196px; height: 78px; padding: 6px 9px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; overflow: hidden; }
+.node:hover, .node:focus-visible { border-color: var(--hover); outline: none; }
+.node.sel { border-color: var(--line-hi); box-shadow: 0 0 0 2px var(--hi-bg); }
+.node.hi { background: var(--hi-bg); }
+.node.dim { opacity: 0.25; }
+.node.bad { border-color: var(--critical); background: var(--critical-bg); }
+.node .k { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; display: flex; gap: 6px; align-items: center; }
+.node .k .fail { margin-left: auto; color: var(--warn); text-transform: none; letter-spacing: 0; }
+.node .l { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.node .s { font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.node .live { font-size: 11px; color: var(--muted); display: flex; gap: 5px; align-items: center; white-space: nowrap; overflow: hidden; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--unknown); flex: none; }
+.dot.ok { background: var(--good); } .dot.failed { background: var(--critical); } .dot.started { background: var(--warn); }
+
+#panel { position: fixed; top: 0; right: 0; bottom: 0; width: min(460px, 100%); background: var(--surface); border-left: 1px solid var(--border); padding: 16px; overflow: auto; box-shadow: -8px 0 24px rgba(0,0,0,0.08); }
+#panel[hidden] { display: none; }
+#panel h2 { font-size: 17px; margin: 0 0 2px; overflow-wrap: anywhere; }
+#panel .close { position: absolute; top: 12px; right: 12px; }
+#panel h3 { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 16px 0 4px; }
+#panel ul { margin: 0; padding-left: 18px; }
+#panel li, #panel .sub, #panel .err { overflow-wrap: anywhere; }
+html, body { overflow-x: hidden; }
+#panel a { color: var(--line-hi); }
+#panel .err { color: var(--critical-text); }
+pre.block { background: var(--code); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; overflow: auto; margin: 4px 0 0; white-space: pre; }
+.links li { overflow-wrap: anywhere; }
+button.linky { font: inherit; background: none; border: 0; padding: 0; color: var(--line-hi); cursor: pointer; text-align: left; }
+
+#files .f { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); margin-bottom: 8px; }
+#files summary { padding: 8px 12px; cursor: pointer; display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+#files summary code { font-weight: 600; overflow-wrap: anywhere; }
+#files .f pre { margin: 0 12px 12px; }
+#files .err { color: var(--critical-text); padding: 0 12px 10px; }
+[hidden] { display: none !important; }
+@media (min-width: 900px) { body.panel-open main { padding-right: 476px; } }
+@media (max-width: 899px) { #panel { top: auto; height: 60vh; width: 100%; border-left: 0; border-top: 1px solid var(--border); } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>atlas</h1>
+    <nav role="tablist">
+      <button role="tab" id="tab-graph" aria-selected="true">Graph</button>
+      <button role="tab" id="tab-files" aria-selected="false">Configs</button>
+    </nav>
+    <input type="search" id="filter" placeholder="Filter: a node and what it connects to" aria-label="Filter">
+    <span class="grow"></span>
+    <span class="sub" id="sub">loading…</span>
+  </header>
+
+  <section id="view-graph">
+    <details id="problems"><summary>Problems</summary><ul></ul></details>
+    <div class="legend" id="legend"></div>
+    <div id="wrap"><div id="canvas"><svg id="edges" class="lines"></svg></div></div>
+  </section>
+
+  <section id="view-files" hidden><div id="files"></div></section>
+</main>
+
+<aside id="panel" hidden></aside>
+
+<script>
+const W = 196, GX = 120, H = 92, NH = 78, TOP = 24, PAD = 16;
+const KIND = { download: 'download', prefix: 'S3 prefix', unzip: 'preprocessor job', pipe: 'duckpipe pipe', table: 'table', mart: 'mart',
+  job: 'lakeshape job', semantic: 'semantic model', server: 'MCP server', profile: 'mcp-hub profile', agent: 'foreman agent',
+  analyst: 'analyst', task: 'foreman task' };
+const EDGE = { files: 'files', event: 'relay event', table: 'table', tools: 'tools', observed: 'observed downloads' };
+const $ = id => document.getElementById(id);
+const host = location.hostname.includes(':') ? `[${location.hostname}]` : location.hostname;
+let G = null, selected = null, filter = '';
+
+// --- state in the URL: #node=<id>&filter=<text> ----------------------------
+function readHash() {
+  const p = new URLSearchParams(location.hash.slice(1));
+  selected = p.get('node'); filter = p.get('filter') || '';
+  $('filter').value = filter;
+  showTab(p.get('tab') === 'configs' ? 'files' : 'graph');
+}
+function writeHash() {
+  const p = new URLSearchParams();
+  if (selected) p.set('node', selected);
+  if (filter) p.set('filter', filter);
+  if (!$('view-files').hidden) p.set('tab', 'configs');
+  history.replaceState(null, '', p.toString() ? '#' + p : location.pathname);
+}
+
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
+function ago(t) {
+  const s = Math.max(0, (Date.now() - new Date(t)) / 1000);
+  if (s < 90) return Math.round(s) + ' s ago';
+  if (s < 5400) return Math.round(s / 60) + ' min ago';
+  if (s < 129600) return Math.round(s / 3600) + ' h ago';
+  return Math.round(s / 86400) + ' days ago';
+}
+function serviceURL(name) {
+  const l = (G.links || []).find(l => l.name === name);
+  return l ? `${location.protocol}//${host}:${l.port}${l.path}` : null;
+}
+
+// --- graph -----------------------------------------------------------------
+function neighbours() {
+  const up = {}, down = {};
+  for (const e of G.edges) { (down[e.from] ||= []).push(e.to); (up[e.to] ||= []).push(e.from); }
+  return { up, down };
+}
+function reach(start, next) {
+  const seen = new Set(start), todo = [...start];
+  while (todo.length) for (const n of next[todo.pop()] || []) if (!seen.has(n)) { seen.add(n); todo.push(n); }
+  return seen;
+}
+// The nodes the filter keeps: those it matches, and everything up- and downstream.
+function kept() {
+  if (!filter) return null;
+  const f = filter.toLowerCase();
+  const hits = G.nodes.filter(n => (n.id + ' ' + n.label + ' ' + (n.sub || '')).toLowerCase().includes(f)).map(n => n.id);
+  const { up, down } = neighbours();
+  return new Set([...reach(hits, up), ...reach(hits, down)]);
+}
+
+function draw() {
+  const keep = kept();
+  const nodes = G.nodes.filter(n => !keep || keep.has(n.id));
+  const ids = new Set(nodes.map(n => n.id));
+  const edges = G.edges.filter(e => ids.has(e.from) && ids.has(e.to));
+
+  // Columns and rows after filtering, so a filtered graph closes up.
+  const cols = [...new Set(nodes.map(n => n.col))].sort((a, b) => a - b);
+  const pos = {};
+  let maxRows = 0;
+  cols.forEach((c, ci) => {
+    const inCol = nodes.filter(n => n.col === c).sort((a, b) => a.row - b.row);
+    inCol.forEach((n, ri) => pos[n.id] = { x: PAD + ci * (W + GX), y: TOP + ri * H });
+    maxRows = Math.max(maxRows, inCol.length);
+  });
+  const width = PAD * 2 + cols.length * (W + GX) - GX, height = TOP + maxRows * H + PAD;
+  const canvas = $('canvas');
+  canvas.style.width = width + 'px'; canvas.style.height = height + 'px';
+  canvas.querySelectorAll('.node').forEach(el => el.remove());
+
+  const { up, down } = neighbours();
+  const lit = selected && ids.has(selected) ? new Set([...reach([selected], up), ...reach([selected], down)]) : null;
+
+  for (const n of nodes) {
+    const el = document.createElement('div');
+    const bad = n.error || n.live?.type === 'failed';
+    el.className = 'node' + (bad ? ' bad' : '') + (n.id === selected ? ' sel' : lit ? (lit.has(n.id) ? ' hi' : ' dim') : '');
+    el.tabIndex = 0;
+    el.style.left = pos[n.id].x + 'px'; el.style.top = pos[n.id].y + 'px';
+    const fail = n.on_fail?.length ? `<span class="fail" title="On failure: ${esc(n.on_fail.join(', '))}">↯ ${n.on_fail.length}</span>` : '';
+    const lv = n.live ? `<div class="live"><span class="dot ${esc(n.live.type)}"></span>${esc(n.live.type)} · ${ago(n.live.time)}</div>`
+      : n.error ? `<div class="live" style="color:var(--critical-text)">${esc(n.error)}</div>` : '';
+    el.innerHTML = `<div class="k">${esc(KIND[n.kind] || n.kind)}${fail}</div><div class="l" title="${esc(n.label)}">${esc(n.label)}</div>` +
+      (n.sub ? `<div class="s" title="${esc(n.sub)}">${esc(n.sub)}</div>` : '') + lv;
+    el.onclick = () => select(n.id === selected ? null : n.id);
+    el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); el.click(); } };
+    canvas.appendChild(el);
+  }
+
+  const svg = $('edges');
+  svg.setAttribute('width', width); svg.setAttribute('height', height);
+  let out = '';
+  for (const e of edges) {
+    const a = pos[e.from], b = pos[e.to];
+    const x1 = a.x + W, y1 = a.y + NH / 2, x2 = b.x, y2 = b.y + NH / 2, mx = (x1 + x2) / 2;
+    // An edge that skips a column dips below the rows so it doesn't run through a node.
+    const skip = x2 - x1 > W + GX + 1, dip = Math.max(y1, y2) + NH / 2 + 8;
+    const d = skip ? `M${x1},${y1} C${x1 + GX},${y1} ${x1 + GX / 2},${dip} ${mx},${dip} S${x2 - GX},${y2} ${x2},${y2}`
+      : x2 > x1 ? `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`
+      : `M${a.x + W / 2},${a.y + NH} C${a.x + W / 2},${y2 + NH} ${b.x + W / 2},${y2 + NH} ${b.x + W / 2},${b.y + NH}`;
+    const on = lit && lit.has(e.from) && lit.has(e.to);
+    const cls = [e.kind, e.live?.type === 'failed' ? 'failed' : '', lit ? (on ? 'hi' : 'dim') : ''].join(' ');
+    out += `<path class="${cls}" d="${d}"><title>${esc((EDGE[e.kind] || e.kind) + (e.label ? ': ' + e.label : ''))}</title></path>`;
+    if (on && e.label) {
+      const lab = e.label + (e.live ? ` · ${e.live.type} ${ago(e.live.time)}` : '');
+      const fit = Math.floor((GX - 8) / 6.2);
+      out += `<text x="${mx}" y="${skip ? dip - 5 : (y1 + y2) / 2 - 5}" text-anchor="middle"><title>${esc(lab)}</title>${esc(lab.length > fit ? lab.slice(0, fit - 1) + '…' : lab)}</text>`;
+    }
+  }
+  svg.innerHTML = out;
+  panel();
+}
+
+// --- side panel ------------------------------------------------------------
+function select(id) {
+  selected = id; writeHash(); draw();
+  // Bring the node into view, left of the panel.
+  const el = id && [...document.querySelectorAll('.node.sel')][0], wrap = $('wrap');
+  if (el) wrap.scrollLeft = Math.max(0, el.offsetLeft - wrap.clientWidth / 2 + W / 2);
+}
+
+function panel() {
+  const p = $('panel'), n = G.nodes.find(n => n.id === selected);
+  document.body.classList.toggle('panel-open', !!n);
+  if (!n) { p.hidden = true; return; }
+  const name = id => G.nodes.find(x => x.id === id)?.label || id;
+  const ins = G.edges.filter(e => e.to === n.id), outs = G.edges.filter(e => e.from === n.id);
+  const edgeList = (list, end) => list.length ? `<ul class="links">${list.map(e =>
+    `<li><button class="linky" data-go="${esc(e[end])}">${esc(name(e[end]))}</button> <span class="sub">${esc(EDGE[e.kind] || e.kind)}${e.label ? ': ' + esc(e.label) : ''}${e.live ? ` · last ${esc(e.live.type)} ${ago(e.live.time)}` : ''}</span></li>`).join('')}</ul>` : '<span class="sub">none</span>';
+  const url = serviceURL(n.service);
+  let h = `<button class="btn close" aria-label="Close">✕</button>
+    <div class="sub">${esc(KIND[n.kind] || n.kind)}</div><h2>${esc(n.label)}</h2>`;
+  if (n.sub) h += `<div class="sub">${esc(n.sub)}</div>`;
+  if (url) h += `<p><a href="${esc(url)}" target="_blank" rel="noopener">Open ${esc(n.service)} ↗</a></p>`;
+  if (n.error) h += `<p class="err">${esc(n.error)}</p>`;
+  if (n.live) h += `<h3>Last event</h3><div><span class="dot ${esc(n.live.type)}" style="display:inline-block"></span> <code>${esc(n.live.topic)} ${esc(n.live.type)}</code> · ${ago(n.live.time)}</div>` +
+    (n.live.error ? `<div class="err">${esc(n.live.error)}</div>` : '');
+  if (n.info?.length) h += `<h3>Notes</h3><ul>${n.info.map(i => `<li>${esc(i)}</li>`).join('')}</ul>`;
+  if (n.on_fail?.length) h += `<h3>When it fails, foreman runs</h3><ul>${n.on_fail.map(t => `<li><button class="linky" data-go="task:${esc(t)}">${esc(t)}</button></li>`).join('')}</ul>`;
+  h += `<h3>From</h3>${edgeList(ins, 'from')}<h3>To</h3>${edgeList(outs, 'to')}`;
+  if (n.at) h += `<h3>Config</h3><div><code>${esc(n.at.file)}${n.at.line ? ':' + n.at.line : ''}</code></div>` +
+    (n.at.block ? `<pre class="block">${esc(n.at.block)}</pre>` : '');
+  p.innerHTML = h;
+  p.hidden = false;
+  p.querySelector('.close').onclick = () => select(null);
+  p.querySelectorAll('[data-go]').forEach(b => b.onclick = () => select(b.dataset.go));
+}
+
+// --- problems, legend, files ----------------------------------------------
+function problems() {
+  const el = $('problems'), list = G.problems || [];
+  el.classList.toggle('has', list.length > 0);
+  el.querySelector('summary').textContent = list.length ? `${list.length} problem${list.length > 1 ? 's' : ''}: links that don't add up` : 'No problems: every link adds up';
+  el.querySelector('ul').innerHTML = list.map(p => `<li>${esc(p.text)}${p.file ? ` <code>${esc(p.file)}${p.line ? ':' + p.line : ''}</code>` : ''}</li>`).join('');
+}
+function legend() {
+  const sample = k => `<svg width="34" height="8" class="lines"><path class="${k}" d="M1,4 L33,4"/></svg>`;
+  $('legend').innerHTML = Object.entries(EDGE).map(([k, v]) => `<span>${sample(k)}${esc(v)}</span>`).join('') +
+    '<span>↯ foreman task types that run when it fails</span><span>click a node for its config and links</span>';
+}
+function files() {
+  $('files').innerHTML = (G.files || []).map(f => `<details class="f"><summary><code>${esc(f.path)}</code>
+    <span class="sub">${esc(f.service)}${f.mod_time && !f.mod_time.startsWith('0001') ? ' · changed ' + ago(f.mod_time) : ''}</span>
+    ${f.error ? '<span class="sub bad">' + esc(f.error) + '</span>' : ''}</summary>
+    ${f.text ? `<pre class="block">${esc(f.text)}</pre>` : ''}</details>`).join('');
+}
+
+function showTab(t) {
+  $('view-graph').hidden = t !== 'graph'; $('view-files').hidden = t !== 'files';
+  $('tab-graph').setAttribute('aria-selected', t === 'graph'); $('tab-files').setAttribute('aria-selected', t === 'files');
+}
+
+// --- loading ---------------------------------------------------------------
+async function load() {
+  try {
+    const r = await fetch('api/graph', { cache: 'no-store' });
+    if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
+    G = await r.json();
+  } catch (e) {
+    $('sub').textContent = 'could not load: ' + e.message; $('sub').className = 'sub bad';
+    return;
+  }
+  const relay = G.relay_error ? ` · no live state (${G.relay_error})` : '';
+  $('sub').textContent = `${G.nodes.length} nodes, ${G.edges.length} links · read ${new Date(G.built).toLocaleTimeString()}${relay}`;
+  $('sub').className = 'sub' + (G.relay_error ? ' bad' : '');
+  problems(); files(); draw();
+}
+
+$('tab-graph').onclick = () => { showTab('graph'); writeHash(); };
+$('tab-files').onclick = () => { showTab('files'); writeHash(); };
+let ft;
+$('filter').oninput = () => { clearTimeout(ft); ft = setTimeout(() => { filter = $('filter').value.trim(); writeHash(); if (G) draw(); }, 150); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && selected) select(null); });
+window.addEventListener('hashchange', () => { readHash(); if (G) draw(); });
+
+readHash();
+legend();
+load().then(() => selected && select(selected));
+setInterval(() => { if (!document.hidden) load(); }, 30000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
+</script>
+</body>
+</html>
