@@ -112,7 +112,9 @@ chmod 0600 "$ENV_FILE"
 
 # --- 4. Config ---------------------------------------------------------------
 log "Installing $CONFIG"
-install -m 0640 -o root -g preprocessor "$SRC_CONFIG" "$CONFIG"
+# Readable by everyone: it holds no secrets (those are in $ENV_FILE), and
+# atlas reads it to show how the services connect.
+install -m 0644 -o root -g root "$SRC_CONFIG" "$CONFIG"
 
 # --- 5. systemd unit ---------------------------------------------------------
 log "Installing $UNIT"
