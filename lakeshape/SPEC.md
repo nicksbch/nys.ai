@@ -241,7 +241,7 @@ silently select nothing. A source term needs its trailing `+`.
 ## Service (`lakeshape serve`)
 
 Runs jobs on the prod target. On the server, it runs from systemd with the
-project deployed to `/var/lib/lakeshape/project`.
+project deployed to `/etc/lakeshape/project`.
 
 ```yaml
 # jobs.yml
@@ -365,7 +365,7 @@ from `/etc/lakeshape.env`.
   `lakeshape` user, a Garage key that can read and write the lake bucket,
   and `/etc/lakeshape.env` (that key, plus the catalog's `PG*` settings from
   `/etc/ducklake.env`). It swaps the project into
-  `/var/lib/lakeshape/project`, putting the old one back if the new one
+  `/etc/lakeshape/project`, putting the old one back if the new one
   doesn't load there, and writes the systemd unit with the same hardening
   as the other services. It restarts the service when the binary or unit
   changed, and reloads it when only the project did.

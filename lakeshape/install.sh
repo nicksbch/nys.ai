@@ -31,7 +31,8 @@ GARAGE=/usr/local/bin/garage
 LAKE_ENV=/etc/ducklake.env
 ENV_FILE=/etc/lakeshape.env
 STATE_DIR=/var/lib/lakeshape
-PROJECT_DIR=$STATE_DIR/project
+PROJECT_DIR=/etc/lakeshape/project
+OLD_PROJECT_DIR=$STATE_DIR/project   # where it was before; removed
 UNIT=/etc/systemd/system/lakeshape.service
 
 log() { printf '\n==> %s\n' "$*"; }
@@ -120,13 +121,15 @@ chmod 0600 "$ENV_FILE"
 
 # --- 4. Project --------------------------------------------------------------
 # Unpacked next to the old one, then swapped in, so the service never reads a
-# half-written project.
+# half-written project. It is in /etc, readable by everyone, like the other
+# services' configs: it holds no secrets, and atlas reads it.
 log "Installing the project in $PROJECT_DIR"
+install -d -m 0755 "$(dirname "$PROJECT_DIR")"
 rm -rf "$PROJECT_DIR.new" "$PROJECT_DIR.old"
-install -d -m 0750 -o root -g lakeshape "$PROJECT_DIR.new"
+install -d -m 0755 -o root -g root "$PROJECT_DIR.new"
 tar -xzf "$SRC_PROJECT" -C "$PROJECT_DIR.new" --no-same-owner
-chown -R root:lakeshape "$PROJECT_DIR.new"
-chmod -R u=rwX,g=rX,o= "$PROJECT_DIR.new"
+chown -R root:root "$PROJECT_DIR.new"
+chmod -R u=rwX,go=rX "$PROJECT_DIR.new"
 new_project=1
 if [[ -d $PROJECT_DIR ]] && diff -rq "$PROJECT_DIR" "$PROJECT_DIR.new" >/dev/null; then new_project=0; fi
 if [[ -d $PROJECT_DIR ]]; then mv "$PROJECT_DIR" "$PROJECT_DIR.old"; fi
@@ -136,7 +139,7 @@ if ! "$CTL" -target prod ls >/dev/null; then
   if [[ -d $PROJECT_DIR.old ]]; then mv "$PROJECT_DIR.old" "$PROJECT_DIR"; fi
   die "the project does not load on the server (see above); the previous one is back in place"
 fi
-rm -rf "$PROJECT_DIR.old"
+rm -rf "$PROJECT_DIR.old" "$OLD_PROJECT_DIR"
 
 # --- 5. systemd unit ---------------------------------------------------------
 log "Installing $UNIT"

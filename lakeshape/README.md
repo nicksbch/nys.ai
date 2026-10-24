@@ -255,7 +255,8 @@ only reloads it, between runs.
    read and write the lake bucket.
 4. On the first run only, writes `/etc/lakeshape.env` (root only): that key,
    and the catalog's `PG*` settings from `/etc/ducklake.env`.
-5. Unpacks the project into `/var/lib/lakeshape/project`. If it doesn't load
+5. Unpacks the project into `/etc/lakeshape/project` (readable by everyone:
+   it holds no secrets). If it doesn't load
    there, the previous project is put back and nothing else changes.
 6. Writes `/etc/systemd/system/lakeshape.service` with the same hardening as
    the other services, then starts, restarts or reloads it as needed.
