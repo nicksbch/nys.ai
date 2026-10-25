@@ -24,6 +24,10 @@ approve it.
 - `_meta: {"wait": "2h"}`, for large files.
 - The tool's description says what it does and when not to use it: "Don't
   retry a URL that failed with a 4xx; it will fail the same way."
+- **`list_buckets`** (read-only, added 2026-10-25 for
+  [nexus](../nexus/SPEC.md)): `{}` → `{"buckets": [...]}`, the buckets the
+  service's key can see, as the page's bucket list shows. A model then
+  doesn't have to guess bucket names.
 
 ## Serving
 

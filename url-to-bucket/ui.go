@@ -128,16 +128,24 @@ func writeErr(w http.ResponseWriter, code int, err error) {
 
 // buckets lists the buckets the service's key can see.
 func (u *ui) buckets(w http.ResponseWriter, r *http.Request) {
-	out, err := u.s3.ListBuckets(r.Context(), &s3.ListBucketsInput{})
+	names, err := u.bucketNames(r.Context())
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, err)
 		return
+	}
+	writeJSON(w, http.StatusOK, names)
+}
+
+func (u *ui) bucketNames(ctx context.Context) ([]string, error) {
+	out, err := u.s3.ListBuckets(ctx, &s3.ListBucketsInput{})
+	if err != nil {
+		return nil, err
 	}
 	names := []string{}
 	for _, b := range out.Buckets {
 		names = append(names, aws.ToString(b.Name))
 	}
-	writeJSON(w, http.StatusOK, names)
+	return names, nil
 }
 
 // request publishes a "requested" event, the same one relay pub would.

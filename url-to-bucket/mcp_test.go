@@ -3,12 +3,16 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	relay "relay/client"
 )
@@ -50,7 +54,15 @@ func mcpServer(t *testing.T) (*publishedRelay, *httptest.Server) {
 	rel := &publishedRelay{}
 	rs := httptest.NewServer(rel.handler())
 	t.Cleanup(rs.Close)
-	u := &ui{bus: &relay.Client{URL: rs.URL, HTTP: &http.Client{}}, active: map[string]*progress{}}
+	// S3 answers ListBuckets only.
+	fakeS3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		io.WriteString(w, `<ListAllMyBucketsResult><Buckets><Bucket><Name>home</Name></Bucket><Bucket><Name>isos</Name></Bucket></Buckets></ListAllMyBucketsResult>`)
+	}))
+	t.Cleanup(fakeS3.Close)
+	client := s3.New(s3.Options{BaseEndpoint: aws.String(fakeS3.URL), Region: "garage", UsePathStyle: true,
+		Credentials: credentials.NewStaticCredentialsProvider("k", "s", "")})
+	u := &ui{bus: &relay.Client{URL: rs.URL, HTTP: &http.Client{}}, s3: client, active: map[string]*progress{}}
 	srv := httptest.NewServer(u.handler("admin:pw", "mcp-token"))
 	t.Cleanup(srv.Close)
 	return rel, srv
@@ -71,11 +83,18 @@ func TestMCPDownload(t *testing.T) {
 	defer s.Close()
 
 	tools, err := s.ListTools(context.Background(), nil)
-	if err != nil || len(tools.Tools) != 1 {
+	if err != nil || len(tools.Tools) != 2 {
 		t.Fatalf("tools = %v, %v", tools, err)
 	}
-	tool := tools.Tools[0]
-	if tool.Name != "download" || (tool.Annotations != nil && tool.Annotations.ReadOnlyHint) || tool.Meta["wait"] != "2h" {
+	var tool *mcp.Tool
+	for _, x := range tools.Tools {
+		if x.Name == "download" {
+			tool = x
+		} else if x.Name != "list_buckets" || x.Annotations == nil || !x.Annotations.ReadOnlyHint {
+			t.Errorf("tool = %+v", x)
+		}
+	}
+	if tool == nil || (tool.Annotations != nil && tool.Annotations.ReadOnlyHint) || tool.Meta["wait"] != "2h" {
 		t.Errorf("tool = %+v", tool)
 	}
 
@@ -94,6 +113,14 @@ func TestMCPDownload(t *testing.T) {
 	json.Unmarshal(b, &data)
 	if data["url"] != "https://x.org/a.iso" || data["bucket"] != "home" || data["key"] != "isos/" {
 		t.Errorf("data = %v", data)
+	}
+
+	res, err = s.CallTool(context.Background(), &mcp.CallToolParams{Name: "list_buckets"})
+	if err != nil || res.IsError {
+		t.Fatalf("list_buckets = %+v, %v", res, err)
+	}
+	if b, _ := json.Marshal(res.StructuredContent); string(b) != `{"buckets":["home","isos"]}` {
+		t.Errorf("list_buckets = %s", b)
 	}
 
 	// A request the page would refuse is a tool error, and nothing is published.
