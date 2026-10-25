@@ -142,8 +142,14 @@ if ! grep -q '^DUCKPIPE_UI_AUTH=' "$ENV_FILE"; then
   new_login="$UI_USER:$(openssl rand -base64 24 | tr -d '/+=')"
   echo "DUCKPIPE_UI_AUTH=$new_login" >>"$ENV_FILE"
 fi
-# Holds the S3 secret and the page password. systemd reads it as root, so the
-# service itself needs no access.
+# The MCP token lets mcp-hub use the tools at /mcp; mcp-hub's install copies
+# it. Added to older installs on their next deploy.
+if ! grep -q '^DUCKPIPE_MCP_TOKEN=' "$ENV_FILE"; then
+  log "Adding an MCP token to $ENV_FILE"
+  echo "DUCKPIPE_MCP_TOKEN=$(openssl rand -hex 24)" >>"$ENV_FILE"
+fi
+# Holds the S3 secret, the page password and the MCP token. systemd reads it
+# as root, so the service itself needs no access.
 chown root:root "$ENV_FILE"
 chmod 0600 "$ENV_FILE"
 
@@ -211,6 +217,7 @@ cat <<EOF
 
 duckpipe is running.
   Page    : http://${host_ip:-localhost}:$port   (what is loading, history, stop all)
+  MCP     : http://${host_ip:-localhost}:$port/mcp (token: sudo grep DUCKPIPE_MCP_TOKEN $ENV_FILE)
   Config  : $CONFIG, from duckpipe/duckpipe.yaml in the repo (change it there and deploy)
   Catalog : $STATE_DIR
   Status  : sudo duckpipectl status

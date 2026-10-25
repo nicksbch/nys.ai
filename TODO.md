@@ -46,6 +46,26 @@ become cards you **Start**. First and only tool: url-to-bucket's
 `download` (plus a new read-only `list_buckets`). Each card follows its
 download on relay until it ends.
 
+### More tools for nexus — `specced`
+
+Specced 2026-10-25. Tier 1 (vigil's read-only tools) and url-to-bucket's
+`list_downloads` are done; duckpipe and lakeshape approved and built
+2026-10-25. The rest is each service's first MCP server, one spec each,
+and each can be approved on its own:
+
+- [preprocessor](preprocessor/SPEC-mcp.md): `list_jobs`; actions
+  `poll_now`, `redo_archive`.
+- `done` [duckpipe](duckpipe/SPEC-mcp.md): `list_pipes`, `load_history`;
+  actions `stop_all`, `resume`.
+- `done` [lakeshape](lakeshape/SPEC-mcp.md): `list_jobs`; action `run_job`
+  (a long tool on `lakeshape.run`). lakeshape gets a listener, on 8103.
+- [garage-ui](garage-ui/SPEC-mcp.md): actions `transfer` (long) and
+  `delete`, each with a read-only preview; nexus learns to show previews.
+
+Every action here can be called by anything holding the hub token,
+without a card. Decide "A token per profile" (mcp-hub, below) first, or at
+least before garage-ui's `delete`.
+
 ## mcp-hub
 
 ### A token per profile — `idea`

@@ -21,6 +21,7 @@ LAKE_BUCKET="${LAKE_BUCKET:-lake}"         # bucket the lake's data is in
 KEY_NAME="${KEY_NAME:-lakeshape-key}"
 ENDPOINT="${ENDPOINT:-http://127.0.0.1:3900}"
 DUCKDB_VERSION="${DUCKDB_VERSION:-v1.5.6}" # 1.5 or newer; keep in step with ducklake-setup.sh
+LISTEN="${LISTEN:-127.0.0.1:8103}"         # the MCP tools, for mcp-hub; local only
 
 SRC_BIN="${1:-}"
 SRC_PROJECT="${2:-}"
@@ -42,6 +43,7 @@ die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 [[ -n $SRC_BIN && -f $SRC_BIN && -n $SRC_PROJECT && -f $SRC_PROJECT ]] || die "usage: sudo bash $0 <lakeshape binary> <project.tgz>"
 command -v systemctl >/dev/null || die "systemd is required"
 command -v curl >/dev/null || die "curl is required (apt install curl)"
+command -v openssl >/dev/null || die "openssl is required (apt install openssl)"
 [[ -x $GARAGE ]] || die "$GARAGE not found: run garage-setup.sh first"
 "$GARAGE" status >/dev/null 2>&1 || die "garage is not running (systemctl status garage)"
 [[ -f $LAKE_ENV ]] || die "$LAKE_ENV not found: run ducklake-setup.sh first"
@@ -115,6 +117,12 @@ else
   } >"$ENV_FILE"
   umask 022
 fi
+# The MCP token lets mcp-hub use the tools at /mcp; mcp-hub's install copies
+# it. Added to older installs on their next deploy.
+if ! grep -q '^LAKESHAPE_MCP_TOKEN=' "$ENV_FILE"; then
+  log "Adding an MCP token to $ENV_FILE"
+  echo "LAKESHAPE_MCP_TOKEN=$(openssl rand -hex 24)" >>"$ENV_FILE"
+fi
 # Holds the secrets. systemd reads it as root, so the service needs no access.
 chown root:root "$ENV_FILE"
 chmod 0600 "$ENV_FILE"
@@ -155,7 +163,7 @@ EnvironmentFile=$ENV_FILE
 # from it, and runs are published to it.
 EnvironmentFile=-/etc/relay-client.env
 Environment=HOME=$STATE_DIR
-ExecStart=$BIN -project $PROJECT_DIR -state-dir $STATE_DIR -duckdb $DUCKDB serve
+ExecStart=$BIN -project $PROJECT_DIR -state-dir $STATE_DIR -duckdb $DUCKDB -listen $LISTEN serve
 ExecReload=/bin/kill -HUP \$MAINPID
 User=lakeshape
 Group=lakeshape
@@ -212,6 +220,7 @@ lakeshape is running.
   Project : $PROJECT_DIR   (ship a new one with deploy.sh)
   Models  : sudo lakeshapectl ls -target prod
   Run now : sudo lakeshapectl trigger <job> [-full-refresh]
+  MCP     : http://$LISTEN/mcp (token: sudo grep LAKESHAPE_MCP_TOKEN $ENV_FILE)
   History : sudo lakeshapectl history [model]
   Logs    : journalctl -u lakeshape -f
   Reload  : sudo systemctl reload lakeshape   (between runs)

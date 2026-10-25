@@ -45,6 +45,8 @@ newer), so it needs no cgo.
 | `jobs.go`           | `jobs.yml`: schedules and relay triggers                                   |
 | `serve.go`          | The service, and `trigger`                                                 |
 | `relay.go`          | Reading and publishing relay events                                        |
+| `mcp.go`            | The MCP tools on `-listen`                                                 |
+| `SPEC-mcp.md`       | The MCP tools' spec                                                        |
 | `testdata/shop/`    | An example project, used by the tests                                      |
 | `deploy.sh`         | Run on your Mac: builds the binary and installs it with your project on the server |
 | `install.sh`        | Run on the server by `deploy.sh`: DuckDB CLI, user, key, project, service  |
@@ -185,6 +187,7 @@ skipped, and 2 if the project doesn't load.
 | `-region`       | from env or profile, else `garage`                    | S3 region                                       |
 | `-profile`      |                                                       | Profile name from `~/.aws`                      |
 | `-state-dir`    | `$LAKESHAPE_STATE_DIR`, else DuckDB's own             | Where DuckDB keeps extensions and spill files   |
+| `-listen`       |                                                       | `serve`: address of the MCP tools (`/mcp`, behind `$LAKESHAPE_MCP_TOKEN`); empty for none |
 
 Credentials come from the environment, like the other tools: the usual AWS
 variables (or `~/.aws`) for the lake's data, and `PG*` variables for a
@@ -276,6 +279,19 @@ only reloads it, between runs.
 
 Use `lakeshapectl` rather than running `lakeshape` as root: it runs as the
 service's user, with its credentials and the deployed project.
+
+## MCP
+
+The service serves two tools at `/mcp` on `-listen` (`127.0.0.1:8103` on
+the server), behind `Authorization: Bearer $LAKESHAPE_MCP_TOKEN`. Agents
+reach them through mcp-hub as `lakeshape__*`; the `nexus` profile has both.
+
+| Tool        | Read-only | What it does                                                     |
+|-------------|-----------|------------------------------------------------------------------|
+| `list_jobs` | yes       | The loaded jobs: `select`, `exclude`, schedule, `on:` triggers, last run, and whether each is running now |
+| `run_job`   | no        | `{job, full_refresh?}`: what `trigger` does; returns `{run_id, topic: "lakeshape.run"}` at once. `_meta.wait` is `2h` |
+
+Details in [SPEC-mcp.md](SPEC-mcp.md).
 
 ## relay and vigil
 

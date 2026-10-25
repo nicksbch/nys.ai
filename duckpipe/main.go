@@ -29,7 +29,9 @@
 // "run" serves a web page on -listen (default 127.0.0.1:8100; empty for
 // none): what is being loaded, the files waiting, the load history, and "Stop
 // all", which stops the load under way and pauses polling until "Resume". Set
-// -auth (or DUCKPIPE_UI_AUTH) to user:pass to require a login.
+// -auth (or DUCKPIPE_UI_AUTH) to user:pass to require a login. With
+// -mcp-token (or DUCKPIPE_MCP_TOKEN), the same is at /mcp as MCP tools, for
+// mcp-hub.
 package main
 
 import (
@@ -61,6 +63,7 @@ func main() {
 	stateDir := fs.String("state-dir", os.Getenv("DUCKPIPE_STATE_DIR"), "where DuckDB keeps extensions and spill files (default: DuckDB's own)")
 	listen := fs.String("listen", "127.0.0.1:8100", "address of the web page (run only); empty for none")
 	auth := fs.String("auth", os.Getenv("DUCKPIPE_UI_AUTH"), "require HTTP basic auth on the page, as user:pass")
+	mcpToken := fs.String("mcp-token", os.Getenv("DUCKPIPE_MCP_TOKEN"), "serve the MCP tools at /mcp, behind this bearer token")
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Load new files from S3 into DuckLake tables, continuously.\n\n"+
 			"usage: %s [flags] run | once | status | retry [pipe] | history [pipe] | check\n\n", fs.Name())
@@ -103,7 +106,7 @@ func main() {
 		switch pos[0] {
 		case "run":
 			if *listen != "" {
-				go e.serve(ctx, *listen, *auth)
+				go e.serve(ctx, *listen, *auth, *mcpToken)
 			}
 			return e.run(ctx)
 		case "once":

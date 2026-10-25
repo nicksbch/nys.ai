@@ -2,11 +2,13 @@
   "servers": [
     {"name": "vigil", "url": "http://127.0.0.1:8090/mcp", "token_env": "VIGIL_MCP_TOKEN"},
     {"name": "semantic", "url": "http://127.0.0.1:8097/mcp", "token_env": "SEMANTIC_MCP_TOKEN"},
-    {"name": "url-to-bucket", "url": "http://127.0.0.1:8093/mcp", "token_env": "URL_TO_BUCKET_MCP_TOKEN"}
+    {"name": "url-to-bucket", "url": "http://127.0.0.1:8093/mcp", "token_env": "URL_TO_BUCKET_MCP_TOKEN"},
+    {"name": "duckpipe", "url": "http://127.0.0.1:8100/mcp", "token_env": "DUCKPIPE_MCP_TOKEN"},
+    {"name": "lakeshape", "url": "http://127.0.0.1:8103/mcp", "token_env": "LAKESHAPE_MCP_TOKEN"}
   ],
   "profiles": {
     "oncall": {"servers": ["vigil", "url-to-bucket"], "allow": ["vigil__list_events", "vigil__get_run", "vigil__list_jobs", "vigil__list_alerts", "url-to-bucket__download"]},
     "analyst": {"servers": ["semantic"]},
-    "nexus": {"servers": ["url-to-bucket", "vigil"], "allow": ["url-to-bucket__download", "url-to-bucket__list_buckets", "url-to-bucket__list_objects", "url-to-bucket__suggest_key", "url-to-bucket__list_downloads", "vigil__get_system", "vigil__get_system_history", "vigil__list_alerts", "vigil__list_jobs", "vigil__list_events", "vigil__get_run"]}
+    "nexus": {"servers": ["url-to-bucket", "vigil", "duckpipe", "lakeshape"], "allow": ["url-to-bucket__download", "url-to-bucket__list_buckets", "url-to-bucket__list_objects", "url-to-bucket__suggest_key", "url-to-bucket__list_downloads", "vigil__get_system", "vigil__get_system_history", "vigil__list_alerts", "vigil__list_jobs", "vigil__list_events", "vigil__get_run", "duckpipe__list_pipes", "duckpipe__load_history", "duckpipe__stop_all", "duckpipe__resume", "lakeshape__list_jobs", "lakeshape__run_job"]}
   }
 }

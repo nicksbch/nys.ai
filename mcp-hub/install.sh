@@ -11,7 +11,7 @@
 # Safe to re-run: the binary, servers.json (from the repo) and the unit are
 # replaced and the service restarted. servers.json is checked first: if it
 # doesn't load, nothing is changed. An existing /etc/mcp-hub.env is left
-# untouched, apart from adding the vigil and semantic MCP tokens that it lacks.
+# untouched, apart from adding the upstreams' MCP tokens that it lacks.
 
 set -euo pipefail
 
@@ -52,7 +52,7 @@ EOF
   umask 022
 fi
 # Copy the MCP tokens of the upstreams installed on this server.
-for app in vigil semantic url-to-bucket; do
+for app in vigil semantic url-to-bucket duckpipe lakeshape; do
   var="$(tr a-z- A-Z_ <<<"$app")_MCP_TOKEN"
   token=$(sed -n "s/^$var=//p" "/etc/$app.env" 2>/dev/null || true)
   if [[ -n $token ]] && ! grep -q "^$var=" "$ENV_FILE"; then
@@ -89,7 +89,7 @@ log "Installing $UNIT"
 cat >"$UNIT" <<EOF
 [Unit]
 Description=mcp-hub - one MCP endpoint for every service
-After=network-online.target vigil.service relay.service semantic.service
+After=network-online.target vigil.service relay.service semantic.service url-to-bucket.service duckpipe.service lakeshape.service
 Wants=network-online.target
 
 [Service]

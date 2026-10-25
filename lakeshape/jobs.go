@@ -31,9 +31,9 @@ type job struct {
 // trigger matches relay events: topic in relay's filter syntax, type one or a
 // comma list (empty: any), and data's top-level fields by equality.
 type trigger struct {
-	Topic string         `yaml:"topic"`
-	Type  string         `yaml:"type"`
-	Data  map[string]any `yaml:"data"`
+	Topic string         `yaml:"topic" json:"topic"`
+	Type  string         `yaml:"type" json:"type,omitempty"`
+	Data  map[string]any `yaml:"data" json:"data,omitempty"`
 }
 
 type duration struct{ time.Duration }

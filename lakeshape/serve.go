@@ -24,6 +24,7 @@ type service struct {
 	out io.Writer
 	pub *publisher
 	api *relayAPI // nil without relay
+	mcp *board    // what the MCP tools see (mcp.go)
 
 	base  *project
 	envs  map[string]*env // by job vars ("" for none): jobs with vars render differently
@@ -142,13 +143,15 @@ func (s *service) lastRuns(ctx context.Context) (map[string]time.Time, error) {
 	return out, nil
 }
 
-func serve(ctx context.Context, dir string, lo lakeOptions, out io.Writer) error {
+// With listen, the MCP tools are served there, behind mcpToken.
+func serve(ctx context.Context, dir string, lo lakeOptions, out io.Writer, listen, mcpToken string) error {
 	bus := relay.FromEnv()
-	s := &service{dir: dir, lo: lo, out: out, pub: newPublisher(bus), api: newRelayAPI(bus)}
+	s := &service{dir: dir, lo: lo, out: out, pub: newPublisher(bus), api: newRelayAPI(bus), mcp: newBoard(bus)}
 	defer s.pub.flush(5 * time.Second)
 	if err := s.load(ctx); err != nil {
 		return err
 	}
+	s.mcp.setJobs(s.order, s.jobs)
 	loc := s.base.location
 
 	hup := make(chan os.Signal, 1)
@@ -164,6 +167,10 @@ func serve(ctx context.Context, dir string, lo lakeOptions, out io.Writer) error
 	last, err := s.lastRuns(ctx)
 	if err != nil {
 		return fmt.Errorf("reading run history: %w", err)
+	}
+	s.mcp.setLast(last)
+	if listen != "" {
+		go s.mcp.serveMCP(ctx, listen, mcpToken)
 	}
 	for _, name := range s.order {
 		j := s.jobs[name]
@@ -246,6 +253,7 @@ func serve(ctx context.Context, dir string, lo lakeOptions, out io.Writer) error
 				failedReload = true
 			} else {
 				log.Printf("reloaded: %d jobs", len(s.order))
+				s.mcp.setJobs(s.order, s.jobs)
 				loc = s.base.location
 				if failedReload {
 					s.pub.send(relay.Event{Topic: "lakeshape.project", Type: "ok"})
@@ -505,8 +513,10 @@ func (s *service) runAll(ctx context.Context, reqs []*request) []uint64 {
 		if runID == "" {
 			runID = newRunID()
 		}
+		finished := s.mcp.start(g.jobs)
 		_, err := e.l.build(ctx, models, runOptions{runID: runID, jobs: g.jobs, fullRefresh: g.fullRefresh,
 			out: s.out, notify: s.pub.notify(runID)})
+		finished()
 		if err != nil {
 			log.Printf("run %s (%s): %v", runID, strings.Join(g.jobs, ", "), err)
 			s.pub.send(relay.Event{Topic: "lakeshape.run", Type: "failed", RunID: runID,
@@ -527,9 +537,7 @@ func triggerJob(ctx context.Context, p *project, name string, fullRefresh bool, 
 		return fmt.Errorf("relay is not configured (RELAY_URL or %s): trigger asks the service through relay", relay.EnvFile)
 	}
 	api := newRelayAPI(bus)
-	runID := newRunID()
-	ev, err := bus.Publish(ctx, relay.Event{Topic: "lakeshape.trigger", Type: "requested", RunID: runID,
-		Data: map[string]any{"job": name, "full_refresh": fullRefresh}})
+	runID, ev, err := requestRun(ctx, bus, name, fullRefresh)
 	if err != nil {
 		return err
 	}
@@ -563,4 +571,13 @@ func triggerJob(ctx context.Context, p *project, name string, fullRefresh bool, 
 			}
 		}
 	}
+}
+
+// requestRun asks the running service to run a job, alone, with a new run
+// ID: `lakeshape trigger` and the run_job tool.
+func requestRun(ctx context.Context, bus *relay.Client, name string, fullRefresh bool) (string, relay.Event, error) {
+	runID := newRunID()
+	ev, err := bus.Publish(ctx, relay.Event{Topic: "lakeshape.trigger", Type: "requested", RunID: runID,
+		Data: map[string]any{"job": name, "full_refresh": fullRefresh}})
+	return runID, ev, err
 }

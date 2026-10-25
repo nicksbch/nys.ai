@@ -95,7 +95,10 @@ bucket isn't clear rather than guess.
 - **mcp-hub `servers.json`:** a profile `nexus` with url-to-bucket's
   `download` and `list_buckets`. Added 2026-10-25: url-to-bucket's
   `list_downloads` and vigil's six read-only tools, so "did it work?",
-  "what's downloading?" and "how much disk is left?" have answers.
+  "what's downloading?" and "how much disk is left?" have answers. Then
+  duckpipe's and lakeshape's tools ([duckpipe](../duckpipe/SPEC-mcp.md),
+  [lakeshape](../lakeshape/SPEC-mcp.md)): their first non-download
+  actions, each a card like a download.
 - **url-to-bucket:** a read-only tool `suggest_key` (added 2026-10-25):
   the folders already holding files named like the URL's file, with the
   full key to use. The small local model stopped one level into

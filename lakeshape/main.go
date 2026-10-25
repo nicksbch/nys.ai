@@ -9,7 +9,7 @@
 //	lakeshape [-project .] run [-select …] [-exclude …] [-full-refresh] [-vars …]
 //	lakeshape [-project .] test [-select …]     # run tests without building
 //	lakeshape [-project .] history [model]      # from run_history, newest first
-//	lakeshape [-project .] serve                # the service: runs jobs.yml's jobs on prod
+//	lakeshape [-project .] serve [-listen …]    # the service: runs jobs.yml's jobs on prod; MCP tools on -listen
 //	lakeshape [-project .] trigger <job>        # ask the running service to run a job now
 //
 // The CLI works on the dev target: models go to dev_<user>__<schema>.
@@ -59,6 +59,7 @@ func main() {
 	sel := fs.String("select", "", "models to use, e.g. 'stg_orders+ tag:daily' (default: all)")
 	excl := fs.String("exclude", "", "models to leave out, same syntax as -select")
 	fullRefresh := fs.Bool("full-refresh", false, "run, trigger: build incremental models from scratch")
+	listen := fs.String("listen", "", "serve: address of the MCP tools (/mcp); empty for none")
 	orphans := fs.Bool("orphans", false, "ls: list tables and views in the project's schemas that no model builds")
 	var lo lakeOptions
 	fs.StringVar(&lo.duckdb, "duckdb", envOr("LAKESHAPE_DUCKDB", "duckdb"), "duckdb CLI (1.5 or newer) to run SQL with")
@@ -98,7 +99,7 @@ func main() {
 	err := func() error {
 		switch pos[0] {
 		case "serve": // always prod
-			return serve(ctx, *dir, lo, os.Stdout)
+			return serve(ctx, *dir, lo, os.Stdout, *listen, os.Getenv("LAKESHAPE_MCP_TOKEN"))
 		case "trigger":
 			p, err := loadProject(*dir, target{name: "prod"}, nil)
 			if err != nil {
@@ -202,7 +203,7 @@ var commandFlags = map[string][]string{
 	"run":     {"target", "dev-user", "vars", "select", "exclude", "full-refresh"},
 	"test":    {"target", "dev-user", "vars", "select", "exclude"},
 	"history": {"target", "dev-user"},
-	"serve":   {},
+	"serve":   {"listen"},
 	"trigger": {"full-refresh"},
 }
 

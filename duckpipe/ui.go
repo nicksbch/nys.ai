@@ -3,7 +3,8 @@ package main
 // The web page served by "duckpipe run": the batch being loaded, each pipe's
 // last poll and the files still to load, the load history, and "Stop all",
 // which stops the load under way and pauses polling until "Resume". Pipes
-// come from the config and can't be changed here.
+// come from the config and can't be changed here. The same, as MCP tools, is
+// at /mcp (mcp.go).
 
 import (
 	"context"
@@ -22,18 +23,9 @@ var uiHTML []byte
 const historyLimit = 500
 
 // serve runs the page on addr until ctx ends. auth is "user:pass" for basic
-// auth, or empty for none.
-func (e *engine) serve(ctx context.Context, addr, auth string) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(uiHTML)
-	})
-	mux.HandleFunc("GET /api/state", e.apiState)
-	mux.HandleFunc("GET /api/history", e.apiHistory)
-	mux.HandleFunc("POST /api/stop", e.apiStop)
-	mux.HandleFunc("POST /api/resume", e.apiResume)
-	srv := &http.Server{Addr: addr, Handler: guard(auth, mux), ReadHeaderTimeout: 10 * time.Second}
+// auth, or empty for none. With mcpToken, the MCP tools are at /mcp behind it.
+func (e *engine) serve(ctx context.Context, addr, auth, mcpToken string) {
+	srv := &http.Server{Addr: addr, Handler: e.handler(auth, mcpToken), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -46,14 +38,37 @@ func (e *engine) serve(ctx context.Context, addr, auth string) {
 	}
 }
 
+func (e *engine) handler(auth, mcpToken string) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(uiHTML)
+	})
+	mux.HandleFunc("GET /api/state", e.apiState)
+	mux.HandleFunc("GET /api/history", e.apiHistory)
+	mux.HandleFunc("POST /api/stop", e.apiStop)
+	mux.HandleFunc("POST /api/resume", e.apiResume)
+	if mcpToken != "" {
+		mux.Handle("/mcp", bearerAuth(mcpToken, e.mcpHandler()))
+	} else {
+		log.Print("DUCKPIPE_MCP_TOKEN is not set: no MCP tools at /mcp")
+	}
+	return guard(auth, mux)
+}
+
 // guard adds optional basic auth, and requires a custom header on every
 // state-changing request so other web pages can't forge them (a cross-origin
 // request with a custom header needs a CORS preflight, which we never grant).
-// /healthz is open.
+// /healthz is open, and /mcp has its own bearer token instead: it is for
+// mcp-hub, not a browser.
 func guard(auth string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/healthz" {
 			w.Write([]byte("ok\n"))
+			return
+		}
+		if r.URL.Path == "/mcp" {
+			next.ServeHTTP(w, r)
 			return
 		}
 		if auth != "" {
@@ -194,7 +209,12 @@ type pipeView struct {
 }
 
 func (e *engine) apiState(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, e.stateView())
+}
+
+func (e *engine) stateView() stateView {
 	e.mu.Lock()
+	defer e.mu.Unlock()
 	v := stateView{State: "idle", Poll: e.cfg.Poll.Duration.String(), Loading: e.loading, Pipes: []pipeView{}}
 	if !e.maintaining.IsZero() {
 		t := e.maintaining
@@ -214,8 +234,7 @@ func (e *engine) apiState(w http.ResponseWriter, r *http.Request) {
 		v.Pipes = append(v.Pipes, pipeView{Name: p.Name, Source: "s3://" + p.Bucket + "/" + p.Prefix + p.Pattern,
 			Table: e.targetName(p), pipeState: e.pipes[p.Name]})
 	}
-	e.mu.Unlock()
-	writeJSON(w, http.StatusOK, v)
+	return v
 }
 
 // historyView is read from the lake, by running duckdb, so the page asks for
@@ -250,17 +269,26 @@ type histView struct {
 func (e *engine) apiHistory(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), time.Minute)
 	defer cancel()
+	v, err := e.historyView(ctx, r.URL.Query().Get("pipe"), "", historyLimit)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+// historyView is each pipe's totals and the newest limit history rows, for
+// one pipe and one status if they aren't empty.
+func (e *engine) historyView(ctx context.Context, pipe, status string, limit int) (historyView, error) {
 	stats, _, err := e.stats(ctx)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err)
-		return
+		return historyView{}, err
 	}
-	rows, err := e.historyRows(ctx, r.URL.Query().Get("pipe"), historyLimit)
+	rows, err := e.historyRows(ctx, pipe, status, limit)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err)
-		return
+		return historyView{}, err
 	}
-	v := historyView{Stats: []statView{}, History: []histView{}, Limit: historyLimit}
+	v := historyView{Stats: []statView{}, History: []histView{}, Limit: limit}
 	for _, p := range e.cfg.Pipes {
 		s := stats[p.Name]
 		v.Stats = append(v.Stats, statView{Pipe: p.Name, Files: s.int("files"), Rows: s.int("rows"),
@@ -271,7 +299,7 @@ func (e *engine) apiHistory(w http.ResponseWriter, r *http.Request) {
 			Target: h.str("target"), Status: h.str("status"), Rows: h.int("rows"), Size: h.int("size"),
 			Error: h.str("error")})
 	}
-	writeJSON(w, http.StatusOK, v)
+	return v, nil
 }
 
 func (e *engine) apiStop(w http.ResponseWriter, r *http.Request) {

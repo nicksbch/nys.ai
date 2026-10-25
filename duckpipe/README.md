@@ -50,6 +50,8 @@ you can also use there to query the tables.
   it is installed, and vigil reads them from there (see below).
 - **Page:** a web page shows what is loading, the files waiting and the load
   history, and can stop all loading (see [The page](#the-page)).
+- **MCP:** the same as four tools, for agents through
+  [mcp-hub](../mcp-hub) (see [MCP](#mcp)).
 
 Garage can't send notifications when a file arrives, so duckpipe lists each
 prefix every 30 seconds (`poll`). `sudo systemctl kill -s HUP duckpipe` makes it
@@ -65,6 +67,8 @@ look right away.
 | `config.go`              | The config file                                                               |
 | `ui.go`                  | The web page's server: JSON API, stop all, resume                             |
 | `ui.html`                | The page (plain HTML and JavaScript, built into the binary)                   |
+| `mcp.go`                 | The MCP tools at `/mcp`                                                       |
+| `SPEC-mcp.md`            | The MCP tools' spec                                                           |
 | `duckpipe.yaml`          | The server's config (the pipes), with every setting explained. Deployed as is |
 | `deploy.sh`              | Run on your Mac: builds the binary and installs it on the server              |
 | `install.sh`             | Run on the server by `deploy.sh`: installs duckpipe, the DuckDB CLI, key, config and service |
@@ -185,6 +189,7 @@ AWS_ENDPOINT_URL=http://192.168.1.169:3900   # this is the default
 | `-state-dir`    | `$DUCKPIPE_STATE_DIR`, else DuckDB's own (`~/.duckdb`) | Where DuckDB keeps extensions and spill files |
 | `-listen`       | `127.0.0.1:8100`                                      | Address of the page (`run` only); empty for none |
 | `-auth`         | `$DUCKPIPE_UI_AUTH`                                   | Basic auth for the page, as `user:pass`; empty for none |
+| `-mcp-token`    | `$DUCKPIPE_MCP_TOKEN`                                 | Serve the MCP tools at `/mcp`, behind this bearer token; empty for none |
 
 DuckDB downloads its `httpfs`, `ducklake` and `sqlite` extensions on first use,
 so the first run needs internet access.
@@ -275,6 +280,21 @@ login), also linked from [home](../home):
 Being stopped is kept in memory only: restarting the service (or a deploy)
 resumes loading. The page refreshes itself every few seconds. Pipes come from
 `duckpipe.yaml` and can't be changed here.
+
+## MCP
+
+At `/mcp` on the page's address, behind `Authorization: Bearer
+$DUCKPIPE_MCP_TOKEN` (the page's login doesn't open it). Agents reach them
+through mcp-hub as `duckpipe__*`; the `nexus` profile has all four.
+
+| Tool           | Read-only | What it does                                                          |
+|----------------|-----------|-----------------------------------------------------------------------|
+| `list_pipes`   | yes       | The page's state: loading, idle, stopped…, the batch being loaded, each pipe's last poll, error and files waiting |
+| `load_history` | yes       | `{pipe?, status?, limit?}`: each pipe's totals and the newest history rows (20 by default, at most 500), by pipe and by `loaded` or `failed` |
+| `stop_all`     | no        | Stop all, as on the page                                              |
+| `resume`       | no        | Resume, as on the page                                                |
+
+Details in [SPEC-mcp.md](SPEC-mcp.md).
 
 ## relay and vigil
 

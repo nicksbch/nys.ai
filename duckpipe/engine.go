@@ -609,14 +609,17 @@ func (e *engine) status(ctx context.Context, w io.Writer) error {
 }
 
 // historyRows returns the load history, newest first: every file loaded or
-// failed, optionally for one pipe only, at most limit rows (0: all). at is
-// UTC, "2006-01-02 15:04:05".
-func (e *engine) historyRows(ctx context.Context, pipe string, limit int) ([]row, error) {
+// failed, optionally for one pipe and one status ("loaded" or "failed")
+// only, at most limit rows (0: all). at is UTC, "2006-01-02 15:04:05".
+func (e *engine) historyRows(ctx context.Context, pipe, status string, limit int) ([]row, error) {
 	q := `SELECT strftime(loaded_at, '%Y-%m-%d %H:%M:%S') AS at, pipe, 's3://' || bucket || '/' || key AS file,
 			coalesce(target, '-') AS target, status, rows, size, error
-		FROM ` + e.hist
+		FROM ` + e.hist + " WHERE true"
 	if pipe != "" {
-		q += " WHERE pipe = " + ql(pipe)
+		q += " AND pipe = " + ql(pipe)
+	}
+	if status != "" {
+		q += " AND status = " + ql(status)
 	}
 	q += " ORDER BY loaded_at DESC, key"
 	if limit > 0 {
@@ -628,7 +631,7 @@ func (e *engine) historyRows(ctx context.Context, pipe string, limit int) ([]row
 // history lists every file loaded or failed, newest first, optionally for
 // one pipe only.
 func (e *engine) history(ctx context.Context, w io.Writer, pipe string) error {
-	rows, err := e.historyRows(ctx, pipe, 0)
+	rows, err := e.historyRows(ctx, pipe, "", 0)
 	if err != nil {
 		return err
 	}
