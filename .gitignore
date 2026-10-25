@@ -5,6 +5,7 @@ deploy.env
 /duckpipe/duckpipe
 /preprocessor/preprocessor
 /analyst/analyst
+/nexus/nexus
 /foreman/foreman
 /garage-ui/garage-ui
 /home/home
