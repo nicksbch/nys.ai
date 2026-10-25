@@ -52,8 +52,8 @@ EOF
   umask 022
 fi
 # Copy the MCP tokens of the upstreams installed on this server.
-for app in vigil semantic; do
-  var="$(tr a-z A-Z <<<"$app")_MCP_TOKEN"
+for app in vigil semantic url-to-bucket; do
+  var="$(tr a-z- A-Z_ <<<"$app")_MCP_TOKEN"
   token=$(sed -n "s/^$var=//p" "/etc/$app.env" 2>/dev/null || true)
   if [[ -n $token ]] && ! grep -q "^$var=" "$ENV_FILE"; then
     log "Adding $app's MCP token to $ENV_FILE"

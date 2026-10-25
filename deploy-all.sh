@@ -16,7 +16,7 @@
 #   lakeshape      lakeshape/deploy.sh             after ducklake: builds ../analytics into the lake
 #   semantic       semantic/deploy.sh              MCP server over the marts; after lakeshape
 #   url-to-bucket  url-to-bucket/deploy.sh         service; after relay: takes download requests from it
-#   mcp-hub        mcp-hub/deploy.sh               MCP gateway; after vigil and semantic: copies their MCP tokens
+#   mcp-hub        mcp-hub/deploy.sh               MCP gateway; after vigil, semantic and url-to-bucket: copies their MCP tokens
 #   foreman        foreman/deploy.sh               agents; after mcp-hub: copies its token
 #   analyst        analyst/deploy.sh               chat over the semantic layer; after mcp-hub: copies its token
 #   atlas          atlas/deploy.sh                 how the services are wired; after the services whose configs it reads
