@@ -36,6 +36,16 @@ so the agent doesn't need to read analyst's conversations. Gap found while
 speccing: BSL's tools aren't annotated read-only, so foreman would withhold
 them; part 2 fixes that in `semantic/server.py`.
 
+## nexus (new)
+
+### Start downloads from a chat — `approved`
+
+Approved 2026-10-25. Spec: [nexus/SPEC.md](nexus/SPEC.md). A chat page whose model proposes
+calls to the tools of one mcp-hub profile; read-only ones run, the others
+become cards you **Start**. First and only tool: url-to-bucket's
+`download` (plus a new read-only `list_buckets`). Each card follows its
+download on relay until it ends.
+
 ## foreman
 
 ### Agents that act — `approved`
