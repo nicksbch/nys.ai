@@ -34,6 +34,17 @@ service's own page. The design and its reasons are in [SPEC.md](SPEC.md).
   every 30 s while the tab is visible. A node whose last event failed is
   red. Without relay the graph still draws, with no live state and no
   observed downloads.
+- **Running:** what is going on across the system right now: downloads,
+  unzips, duckpipe loads, lakeshape runs (with models finished out of
+  models selected) and foreman tasks. Each has what it is working on, how
+  long it has been going and a link to the service's page. A run is
+  running from its `started` event to its `ok` or `failed`, so any service
+  that publishes those shows up. The tab also lists what is waiting (a
+  `requested` with no `started` yet), what ended in the last 15 minutes,
+  and runs with no result after 6 hours (a service killed mid-run never
+  publishes one). Runs that started more than 24 hours ago are left out.
+  Running nodes are marked on the graph. Refreshed every 5 s from relay
+  alone; the design is in [SPEC-running.md](SPEC-running.md).
 
 ## What it reads
 
@@ -46,7 +57,7 @@ service's own page. The design and its reasons are in [SPEC.md](SPEC.md).
 | mcp-hub      | `/etc/mcp-hub/servers.json`                       |
 | foreman      | `/etc/foreman/agents/*.md`, `/etc/foreman/tasks/*.md` |
 | analyst      | `/etc/analyst/models.json`                        |
-| relay        | `GET /v1/topics`, `GET /v1/events?last=1000`      |
+| relay        | `GET /v1/topics`, `GET /v1/events?last=1000`, and for Running: the newest starts and results, and each unanswered run by `run_id` |
 
 Each file is parsed only for the fields that make links; anything else is
 ignored, so a new field in a service's config doesn't break atlas. A file
@@ -65,7 +76,8 @@ What each lakeshape job builds comes from running `lakeshape ls -select
 | `configs.go`  | Reading each service's config                                      |
 | `graph.go`    | Working out the links, the problems, the live state and the layout |
 | `relay.go`    | Reading topics and events from relay                               |
-| `server.go`   | The page, `GET /api/graph`, and the password                       |
+| `running.go`  | Pairing each run's start with its result: what is running now      |
+| `server.go`   | The page, `GET /api/graph`, `GET /api/running`, and the password   |
 | `ui.html`     | The page (plain HTML and JavaScript, built into the binary)        |
 | `deploy.sh`   | Run on your Mac: builds the binary and installs it on the server   |
 | `install.sh`  | Run on the server by `deploy.sh`: binary, login, systemd service   |

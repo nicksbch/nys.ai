@@ -79,6 +79,28 @@ code, pre { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .node .live { font-size: 11px; color: var(--muted); display: flex; gap: 5px; align-items: center; white-space: nowrap; overflow: hidden; }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--unknown); flex: none; }
 .dot.ok { background: var(--good); } .dot.failed { background: var(--critical); } .dot.started { background: var(--warn); }
+.node.running { border-color: var(--warn); }
+.node .k .run { color: var(--warn); text-transform: none; letter-spacing: 0; }
+.node .k .run + .fail { margin-left: 6px; }
+.node .k .run:first-of-type { margin-left: auto; }
+@keyframes pulse { 50% { opacity: .35; } }
+.dot.running { background: var(--warn); animation: pulse 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .dot.running { animation: none; } }
+
+#view-running h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 18px 0 6px; }
+#view-running h2:first-child { margin-top: 0; }
+.runs { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.runs .r { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 2px 10px; padding: 8px 12px; border-top: 1px solid var(--border); align-items: baseline; }
+.runs .r:first-child { border-top: 0; }
+.runs .r .dot { align-self: center; }
+.runs .name { overflow-wrap: anywhere; }
+.runs .when { color: var(--text-2); font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.runs .meta { grid-column: 2 / 4; color: var(--muted); font-size: 12px; display: flex; gap: 4px 12px; flex-wrap: wrap; }
+.runs .meta a { color: var(--line-hi); }
+.runs .err { grid-column: 2 / 4; color: var(--critical-text); font-size: 13px; overflow-wrap: anywhere; }
+.runs .empty { padding: 8px 12px; color: var(--muted); }
+.bar { display: inline-block; width: 80px; height: 6px; border-radius: 3px; background: var(--unknown); vertical-align: middle; overflow: hidden; margin-right: 4px; }
+.bar i { display: block; height: 100%; background: var(--warn); }
 
 #panel { position: fixed; top: 0; right: 0; bottom: 0; width: min(460px, 100%); background: var(--surface); border-left: 1px solid var(--border); padding: 16px; overflow: auto; box-shadow: -8px 0 24px rgba(0,0,0,0.08); }
 #panel[hidden] { display: none; }
@@ -110,6 +132,7 @@ button.linky { font: inherit; background: none; border: 0; padding: 0; color: va
     <h1>atlas</h1>
     <nav role="tablist">
       <button role="tab" id="tab-graph" aria-selected="true">Graph</button>
+      <button role="tab" id="tab-running" aria-selected="false">Running</button>
       <button role="tab" id="tab-files" aria-selected="false">Configs</button>
     </nav>
     <input type="search" id="filter" placeholder="Filter: a node and what it connects to" aria-label="Filter">
@@ -122,6 +145,8 @@ button.linky { font: inherit; background: none; border: 0; padding: 0; color: va
     <div class="legend" id="legend"></div>
     <div id="wrap"><div id="canvas"><svg id="edges" class="lines"></svg></div></div>
   </section>
+
+  <section id="view-running" hidden><div id="running"></div></section>
 
   <section id="view-files" hidden><div id="files"></div></section>
 </main>
@@ -136,20 +161,21 @@ const KIND = { download: 'download', prefix: 'S3 prefix', unzip: 'preprocessor j
 const EDGE = { files: 'files', event: 'relay event', table: 'table', tools: 'tools', observed: 'observed downloads' };
 const $ = id => document.getElementById(id);
 const host = location.hostname.includes(':') ? `[${location.hostname}]` : location.hostname;
-let G = null, selected = null, filter = '';
+let G = null, R = null, selected = null, filter = '', marked = '';
 
 // --- state in the URL: #node=<id>&filter=<text> ----------------------------
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
   selected = p.get('node'); filter = p.get('filter') || '';
   $('filter').value = filter;
-  showTab(p.get('tab') === 'configs' ? 'files' : 'graph');
+  showTab({ configs: 'files', running: 'running' }[p.get('tab')] || 'graph');
 }
 function writeHash() {
   const p = new URLSearchParams();
   if (selected) p.set('node', selected);
   if (filter) p.set('filter', filter);
   if (!$('view-files').hidden) p.set('tab', 'configs');
+  if (!$('view-running').hidden) p.set('tab', 'running');
   history.replaceState(null, '', p.toString() ? '#' + p : location.pathname);
 }
 
@@ -160,6 +186,14 @@ function ago(t) {
   if (s < 5400) return Math.round(s / 60) + ' min ago';
   if (s < 129600) return Math.round(s / 3600) + ' h ago';
   return Math.round(s / 86400) + ' days ago';
+}
+// dur is how long from t until now, or until end.
+function dur(t, end) {
+  const s = Math.max(0, ((end ? new Date(end) : Date.now()) - new Date(t)) / 1000);
+  if (s < 90) return Math.round(s) + ' s';
+  if (s < 3600) return Math.round(s / 60) + ' min';
+  const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60);
+  return h + ' h' + (m ? ' ' + m + ' min' : '');
 }
 function serviceURL(name) {
   const l = (G.links || []).find(l => l.name === name);
@@ -212,13 +246,15 @@ function draw() {
   for (const n of nodes) {
     const el = document.createElement('div');
     const bad = n.error || n.live?.type === 'failed';
-    el.className = 'node' + (bad ? ' bad' : '') + (n.id === selected ? ' sel' : lit ? (lit.has(n.id) ? ' hi' : ' dim') : '');
+    const going = nodeRuns(n.id).filter(r => r.state === 'running');
+    el.className = 'node' + (bad ? ' bad' : going.length ? ' running' : '') + (n.id === selected ? ' sel' : lit ? (lit.has(n.id) ? ' hi' : ' dim') : '');
     el.tabIndex = 0;
     el.style.left = pos[n.id].x + 'px'; el.style.top = pos[n.id].y + 'px';
     const fail = n.on_fail?.length ? `<span class="fail" title="On failure: ${esc(n.on_fail.join(', '))}">↯ ${n.on_fail.length}</span>` : '';
     const lv = n.live ? `<div class="live"><span class="dot ${esc(n.live.type)}"></span>${esc(n.live.type)} · ${ago(n.live.time)}</div>`
       : n.error ? `<div class="live" style="color:var(--critical-text)">${esc(n.error)}</div>` : '';
-    el.innerHTML = `<div class="k">${esc(KIND[n.kind] || n.kind)}${fail}</div><div class="l" title="${esc(n.label)}">${esc(n.label)}</div>` +
+    const run = going.length ? `<span class="run" title="${esc(going.map(r => r.name).join('\n'))}">● running${going.length > 1 ? ' ' + going.length : ''}</span>` : '';
+    el.innerHTML = `<div class="k">${esc(KIND[n.kind] || n.kind)}${run}${fail}</div><div class="l" title="${esc(n.label)}">${esc(n.label)}</div>` +
       (n.sub ? `<div class="s" title="${esc(n.sub)}">${esc(n.sub)}</div>` : '') + lv;
     el.onclick = () => select(n.id === selected ? null : n.id);
     el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); el.click(); } };
@@ -271,6 +307,8 @@ function panel() {
   if (n.sub) h += `<div class="sub">${esc(n.sub)}</div>`;
   if (url) h += `<p><a href="${esc(url)}" target="_blank" rel="noopener">Open ${esc(n.service)} ↗</a></p>`;
   if (n.error) h += `<p class="err">${esc(n.error)}</p>`;
+  const mine = nodeRuns(n.id).filter(r => r.state !== 'ended');
+  if (mine.length) h += `<h3>Now</h3><ul>${mine.map(r => `<li>${esc(STATE[r.state])}: ${esc(r.name)} <span class="sub">· ${r.state === 'waiting' ? 'asked for' : 'started'} ${dur(r.since)} ago${progress(r, true)}</span></li>`).join('')}</ul>`;
   if (n.live) h += `<h3>Last event</h3><div><span class="dot ${esc(n.live.type)}" style="display:inline-block"></span> <code>${esc(n.live.topic)} ${esc(n.live.type)}</code> · ${ago(n.live.time)}</div>` +
     (n.live.error ? `<div class="err">${esc(n.live.error)}</div>` : '');
   if (n.info?.length) h += `<h3>Notes</h3><ul>${n.info.map(i => `<li>${esc(i)}</li>`).join('')}</ul>`;
@@ -304,8 +342,60 @@ function files() {
 }
 
 function showTab(t) {
-  $('view-graph').hidden = t !== 'graph'; $('view-files').hidden = t !== 'files';
-  $('tab-graph').setAttribute('aria-selected', t === 'graph'); $('tab-files').setAttribute('aria-selected', t === 'files');
+  for (const v of ['graph', 'running', 'files']) {
+    $('view-' + v).hidden = t !== v; $('tab-' + v).setAttribute('aria-selected', t === v);
+  }
+}
+
+// --- running ---------------------------------------------------------------
+const STATE = { running: 'running', waiting: 'waiting', ended: 'ended', no_result: 'no result' };
+function nodeRuns(id) { return (R?.runs || []).filter(r => r.nodes?.includes(id)); }
+function progress(r, short) {
+  if (!r.total) return '';
+  const pct = Math.min(100, Math.round(100 * r.done / r.total));
+  return short ? ` · ${r.done} of ${r.total} models` : `<span><span class="bar"><i style="width:${pct}%"></i></span>${r.done} of ${r.total} models</span>`;
+}
+function runRow(r) {
+  const url = G && serviceURL(r.service);
+  const dot = r.state === 'ended' ? r.result : r.state === 'running' ? 'running' : r.state === 'waiting' ? '' : 'started';
+  const when = r.state === 'ended' ? `took ${dur(r.since, r.ended)}`
+    : r.state === 'no_result' ? `started ${dur(r.since)} ago, no result`
+    : r.state === 'waiting' ? `waiting ${dur(r.since)}` : `for ${dur(r.since)}`;
+  const nodes = (r.nodes || []).map(id => `<button class="linky" data-go="${esc(id)}">${esc(G?.nodes.find(n => n.id === id)?.label || id)}</button>`).join(' ');
+  const meta = [`<span>${esc(r.service)} · <code>${esc(r.topic)}</code></span>`,
+    r.state === 'ended' ? `<span>${esc(r.result)} ${ago(r.ended)}</span>` : `<span>since ${new Date(r.since).toLocaleTimeString()}</span>`,
+    progress(r), nodes ? `<span>on the graph: ${nodes}</span>` : '',
+    url ? `<a href="${esc(url)}" target="_blank" rel="noopener">Open ${esc(r.service)} ↗</a>` : ''].filter(Boolean).join('');
+  return `<div class="r"><span class="dot ${esc(dot)}"></span><span class="name">${esc(r.name)}</span><span class="when">${esc(when)}</span>
+    <div class="meta">${meta}</div>${r.error ? `<div class="err">${esc(r.error)}</div>` : ''}</div>`;
+}
+function running() {
+  const runs = R?.runs || [], by = s => runs.filter(r => r.state === s);
+  const now = by('running').length;
+  $('tab-running').textContent = now ? `Running (${now})` : 'Running';
+  if (R?.relay_error) { $('running').innerHTML = `<p class="sub bad">Can't read relay: ${esc(R.relay_error)}</p>`; return; }
+  const ended = by('ended').sort((a, b) => new Date(b.ended) - new Date(a.ended));
+  const part = (title, list, empty) => (list.length || empty) ?
+    `<h2>${esc(title)}</h2><div class="runs">${list.length ? list.map(runRow).join('') : `<div class="empty">${esc(empty)}</div>`}</div>` : '';
+  $('running').innerHTML = part('Running', by('running'), 'Nothing is running.') +
+    part('Waiting', by('waiting'), '') +
+    part('Just ended', ended, 'Nothing ended in the last 15 minutes.') +
+    part('No result', by('no_result'), '') +
+    `<p class="sub">From relay's events, read ${new Date(R.read).toLocaleTimeString()}. A run is running from its <code>started</code> to its <code>ok</code> or <code>failed</code>; one going for more than 6 hours is listed under No result.</p>`;
+  $('running').querySelectorAll('[data-go]').forEach(b => b.onclick = () => { showTab('graph'); select(b.dataset.go); });
+}
+async function loadRunning() {
+  try {
+    const r = await fetch('api/running', { cache: 'no-store' });
+    if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
+    R = await r.json();
+  } catch (e) {
+    R = { runs: [], relay_error: e.message, read: new Date() };
+  }
+  running();
+  // Redraw the graph only when the nodes that are running change.
+  const m = R.runs.filter(r => r.state === 'running').flatMap(r => r.nodes || []).sort().join(' ');
+  if (G && m !== marked) { marked = m; draw(); }
 }
 
 // --- loading ---------------------------------------------------------------
@@ -326,6 +416,7 @@ async function load() {
 
 $('tab-graph').onclick = () => { showTab('graph'); writeHash(); };
 $('tab-files').onclick = () => { showTab('files'); writeHash(); };
+$('tab-running').onclick = () => { showTab('running'); writeHash(); };
 let ft;
 $('filter').oninput = () => { clearTimeout(ft); ft = setTimeout(() => { filter = $('filter').value.trim(); writeHash(); if (G) draw(); }, 150); };
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && selected) select(null); });
@@ -333,9 +424,10 @@ window.addEventListener('hashchange', () => { readHash(); if (G) draw(); });
 
 readHash();
 legend();
-load().then(() => selected && select(selected));
+load().then(() => { if (selected) select(selected); loadRunning(); });
 setInterval(() => { if (!document.hidden) load(); }, 30000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
+setInterval(() => { if (!document.hidden) loadRunning(); }, 5000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { load(); loadRunning(); } });
 </script>
 </body>
 </html>

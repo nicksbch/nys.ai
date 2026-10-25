@@ -1,7 +1,8 @@
 package main
 
 // What atlas reads from relay: the topics seen, and the newest events, for
-// each node's last event and url-to-bucket's observed downloads.
+// each node's last event and url-to-bucket's observed downloads; and the
+// runs that started, for what is running now.
 
 import (
 	"context"
@@ -18,6 +19,7 @@ type event struct {
 	Time  time.Time      `json:"time"`
 	Topic string         `json:"topic"`
 	Type  string         `json:"type"`
+	RunID string         `json:"run_id,omitempty"`
 	Data  map[string]any `json:"data,omitempty"`
 }
 
@@ -62,6 +64,41 @@ func (r *relayClient) fetch(ctx context.Context) *recent {
 	}
 	out.Downs = newestFirst(evs.Events)
 	return &out
+}
+
+// runEvents is what relay told us about runs: the newest starts and
+// requests, the newest results, and every event of each run whose result
+// isn't among those.
+type runEvents struct {
+	Starts []event            // started and requested, newest first
+	Ends   []event            // ok and failed, newest first
+	ByRun  map[string][]event // run ID -> its events, newest first
+}
+
+func (r *relayClient) fetchRuns(ctx context.Context, now time.Time) (*runEvents, error) {
+	if r.url == "" {
+		return nil, fmt.Errorf("RELAY_URL is not set")
+	}
+	var evs struct {
+		Events []event `json:"events"`
+	}
+	if err := r.get(ctx, "/v1/events?last=500&type=started,requested", &evs); err != nil {
+		return nil, err
+	}
+	out := &runEvents{Starts: newestFirst(evs.Events), ByRun: map[string][]event{}}
+	evs.Events = nil
+	if err := r.get(ctx, "/v1/events?last=1000&type=ok,failed", &evs); err != nil {
+		return nil, err
+	}
+	out.Ends = newestFirst(evs.Events)
+	for _, id := range unanswered(out.Starts, out.Ends, now) {
+		evs.Events = nil
+		if err := r.get(ctx, "/v1/events?last=1000&run_id="+url.QueryEscape(id), &evs); err != nil {
+			return nil, err
+		}
+		out.ByRun[id] = newestFirst(evs.Events)
+	}
+	return out, nil
 }
 
 func (r *relayClient) get(ctx context.Context, path string, v any) error {

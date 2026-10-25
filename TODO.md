@@ -92,3 +92,13 @@ each service's page. A new service rather than part of home, because it
 needs a password and read access to the configs. Decided 2026-10-24:
 configs become readable by everyone (preprocessor and duckpipe `0644`,
 lakeshape's project moves to `/etc/lakeshape/project`).
+
+### What is running now — `done`
+
+Spec: [atlas/SPEC-running.md](atlas/SPEC-running.md). A Running tab, built
+only from relay: a `started` with no `ok`/`failed` for its run ID is
+running. It covers downloads, unzips, loads, lakeshape runs (with models
+done out of models selected) and foreman tasks. It also lists what is
+waiting (`requested` with no `started`) and what ended in the last 15
+minutes, and marks the running nodes on the graph. Queued files and
+byte-level progress are left out. Built 2026-10-25, not yet deployed.

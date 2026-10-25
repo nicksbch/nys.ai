@@ -23,6 +23,10 @@ var uiHTML []byte
 // rebuildEvery is how stale a graph may be before a page load builds it again.
 const rebuildEvery = 10 * time.Second
 
+// rereadRunsEvery is how stale what is running may be, so several open pages
+// don't each ask relay.
+const rereadRunsEvery = 3 * time.Second
+
 type atlas struct {
 	paths paths
 	relay *relayClient
@@ -32,6 +36,16 @@ type atlas struct {
 	mu    sync.Mutex
 	last  *graph
 	built time.Time
+
+	runMu   sync.Mutex
+	running *runningView
+}
+
+// runningView is GET /api/running.
+type runningView struct {
+	Runs  []*run    `json:"runs"`
+	Relay string    `json:"relay_error,omitempty"`
+	Read  time.Time `json:"read"`
 }
 
 // link is where a service's own page is: a port and a path on the host the
@@ -73,6 +87,29 @@ func (a *atlas) graph(ctx context.Context) *graph {
 	return a.last
 }
 
+// runs reads what is running from relay, at most every rereadRunsEvery. It
+// reads no config files: runs are placed on the graph last built, if any.
+func (a *atlas) runs(ctx context.Context) *runningView {
+	a.runMu.Lock()
+	defer a.runMu.Unlock()
+	if a.running != nil && time.Since(a.running.Read) < rereadRunsEvery {
+		return a.running
+	}
+	now := time.Now()
+	v := &runningView{Runs: []*run{}, Read: now}
+	if re, err := a.relay.fetchRuns(ctx, now); err != nil {
+		v.Relay = err.Error()
+	} else {
+		v.Runs = runs(re, now)
+		a.mu.Lock()
+		g := a.last
+		a.mu.Unlock()
+		placeRuns(v.Runs, g)
+	}
+	a.running = v
+	return v
+}
+
 func (a *atlas) routes(auth string) http.Handler {
 	mux := http.NewServeMux()
 	private := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, basicAuth(auth, h)) }
@@ -91,6 +128,12 @@ func (a *atlas) routes(auth string) http.Handler {
 			*graph
 			Links []link `json:"links"`
 		}{g, a.links})
+	})
+	private("GET /api/running", func(w http.ResponseWriter, r *http.Request) {
+		v := a.runs(r.Context())
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		json.NewEncoder(w).Encode(v)
 	})
 	return mux
 }
