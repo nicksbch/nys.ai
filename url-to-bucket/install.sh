@@ -82,7 +82,13 @@ if ! grep -q '^URL_TO_BUCKET_UI_AUTH=' "$ENV_FILE"; then
   new_login="$UI_USER:$(openssl rand -base64 24 | tr -d '/+=')"
   echo "URL_TO_BUCKET_UI_AUTH=$new_login" >>"$ENV_FILE"
 fi
-# Holds the S3 secret and the page password. systemd reads it as root, so the
+# The MCP token lets mcp-hub ask for downloads at /mcp; mcp-hub's install
+# copies it. Added to older installs on their next deploy.
+if ! grep -q '^URL_TO_BUCKET_MCP_TOKEN=' "$ENV_FILE"; then
+  log "Adding an MCP token to $ENV_FILE"
+  echo "URL_TO_BUCKET_MCP_TOKEN=$(openssl rand -hex 24)" >>"$ENV_FILE"
+fi
+# Holds the S3 secret, the page password and the MCP token. systemd reads it as root, so the
 # service needs no access.
 chown root:root "$ENV_FILE"
 chmod 0600 "$ENV_FILE"
@@ -137,6 +143,7 @@ url-to-bucket is running.
   Page    : http://${host_ip:-localhost}:$port
   Request : relay pub url-to-bucket.download requested -run-id ID -data '{"url":"…","bucket":"${BUCKETS%% *}"}'
   Result  : relay wait -run-id ID -type ok,failed
+  MCP     : http://${host_ip:-localhost}:$port/mcp, tool "download" (token: sudo grep URL_TO_BUCKET_MCP_TOKEN $ENV_FILE)
   Buckets : $BUCKETS (others fail with access denied; add with BUCKETS=…)
   Config  : $ENV_FILE
   Logs    : journalctl -u url-to-bucket -f

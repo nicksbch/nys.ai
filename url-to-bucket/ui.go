@@ -11,6 +11,7 @@ import (
 	"crypto/subtle"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -51,17 +52,9 @@ func (u *ui) track(runID string, p *progress) func() {
 }
 
 // serve runs the page on addr until ctx ends. auth is "user:pass" for basic
-// auth, or empty for none.
-func (u *ui) serve(ctx context.Context, addr, auth string) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(uiHTML)
-	})
-	mux.HandleFunc("GET /api/buckets", u.buckets)
-	mux.HandleFunc("GET /api/downloads", u.downloads)
-	mux.HandleFunc("POST /api/downloads", u.request)
-	srv := &http.Server{Addr: addr, Handler: guard(auth, mux), ReadHeaderTimeout: 10 * time.Second}
+// auth, or empty for none. With mcpToken, the MCP tool is at /mcp behind it.
+func (u *ui) serve(ctx context.Context, addr, auth, mcpToken string) {
+	srv := &http.Server{Addr: addr, Handler: u.handler(auth, mcpToken), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -74,14 +67,36 @@ func (u *ui) serve(ctx context.Context, addr, auth string) {
 	}
 }
 
+func (u *ui) handler(auth, mcpToken string) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(uiHTML)
+	})
+	mux.HandleFunc("GET /api/buckets", u.buckets)
+	mux.HandleFunc("GET /api/downloads", u.downloads)
+	mux.HandleFunc("POST /api/downloads", u.request)
+	if mcpToken != "" {
+		mux.Handle("/mcp", bearerAuth(mcpToken, u.mcpHandler()))
+	} else {
+		log.Print("URL_TO_BUCKET_MCP_TOKEN is not set: no MCP tool at /mcp")
+	}
+	return guard(auth, mux)
+}
+
 // guard adds optional basic auth, and requires a custom header on every
 // state-changing request so other web pages can't forge them (a cross-origin
 // request with a custom header needs a CORS preflight, which we never grant).
-// /healthz is open.
+// /healthz is open, and /mcp has its own bearer token instead: it is for
+// mcp-hub, not a browser.
 func guard(auth string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/healthz" {
 			w.Write([]byte("ok\n"))
+			return
+		}
+		if r.URL.Path == "/mcp" {
+			next.ServeHTTP(w, r)
 			return
 		}
 		if auth != "" {
@@ -132,19 +147,36 @@ func (u *ui) request(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, fmt.Errorf("body must be JSON: %w", err))
 		return
 	}
-	if _, err := (requestEvent{Data: data}).job(); err != nil {
+	runID, id, err := u.publishRequest(r.Context(), data)
+	var invalid invalidRequest
+	switch {
+	case errors.As(err, &invalid):
 		writeErr(w, http.StatusBadRequest, err)
-		return
+	case err != nil:
+		writeErr(w, http.StatusBadGateway, err)
+	default:
+		writeJSON(w, http.StatusCreated, map[string]any{"run_id": runID, "id": id})
 	}
-	runID := newRunID()
-	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+}
+
+// invalidRequest is a request that fails the checks; nothing is published.
+type invalidRequest struct{ error }
+
+// publishRequest checks a request and publishes it as a "requested" event
+// with a new run ID. The page and the MCP tool both ask for downloads
+// through it.
+func (u *ui) publishRequest(ctx context.Context, data json.RawMessage) (runID string, id uint64, err error) {
+	if _, err := (requestEvent{Data: data}).job(); err != nil {
+		return "", 0, invalidRequest{err}
+	}
+	runID = newRunID()
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	ev, err := u.bus.Publish(ctx, relay.Event{Topic: topic, Type: "requested", RunID: runID, Data: data})
 	if err != nil {
-		writeErr(w, http.StatusBadGateway, err)
-		return
+		return "", 0, err
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"run_id": runID, "id": ev.ID})
+	return runID, ev.ID, nil
 }
 
 // historyEvent is the part of a relay event the list uses.

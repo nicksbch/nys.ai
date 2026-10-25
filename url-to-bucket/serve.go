@@ -18,7 +18,8 @@ package main
 // download was cut short by a restart runs again.
 //
 // It also serves a web page on -listen to make requests and follow their
-// progress (ui.go).
+// progress (ui.go), and the MCP tool "download" at /mcp on the same address
+// (mcp.go).
 
 import (
 	"bytes"
@@ -49,6 +50,7 @@ func serveMain(args []string) {
 	name := fs.String("consumer", "url-to-bucket", "relay consumer name")
 	listen := fs.String("listen", "127.0.0.1:8093", "address of the web page; empty for none")
 	auth := fs.String("auth", os.Getenv("URL_TO_BUCKET_UI_AUTH"), "require HTTP basic auth on the page, as user:pass")
+	mcpToken := fs.String("mcp-token", os.Getenv("URL_TO_BUCKET_MCP_TOKEN"), "serve the MCP tool at /mcp, behind this bearer token")
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Download URLs requested through relay into S3 buckets.\n\nusage: url-to-bucket serve [flags]\n\n")
 		fs.PrintDefaults()
@@ -74,7 +76,7 @@ func serveMain(args []string) {
 	c := &consumer{url: bus.URL, token: bus.Token, name: *name, http: &http.Client{Timeout: 45 * time.Second}}
 	page := &ui{bus: bus, relay: c, s3: client, active: map[string]*progress{}}
 	if *listen != "" {
-		go page.serve(ctx, *listen, *auth)
+		go page.serve(ctx, *listen, *auth, *mcpToken)
 	}
 	c.run(ctx, *workers, func(ctx context.Context, ev requestEvent) {
 		j, err := ev.job()
