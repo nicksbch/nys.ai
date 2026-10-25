@@ -272,8 +272,9 @@ FOREMAN_AUTH=admin:dev MCP_HUB_TOKEN=… RELAY_URL=http://127.0.0.1:8091 RELAY_T
 
 ## Limits
 
-- Agents only read in v1. Acting (pull requests, re-running jobs) and agents
-  creating tasks for other agents come later; see SPEC.md.
+- Agents act only through a task type's `actions`, one per run, after you
+  approve it. Pull requests and agents creating tasks for other agents
+  come later; see SPEC.md.
 - Each run starts from its trigger alone, with no memory of earlier tasks
   beyond what its tools show.
 - The conversation is resent at each step, so a small context fills up.

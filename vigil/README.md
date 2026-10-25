@@ -128,7 +128,8 @@ relay pub nightly.ingest failed -run-id abc -data '{"name":"orders.csv","error":
 vigil reads every such event through its relay consumer `vigil`, and treats
 it exactly like one posted below. Other types are ignored. Events vigil has
 already stored (by relay ID) are skipped, so redelivery is harmless.
-**url-to-bucket** and **duckpipe** report this way.
+url-to-bucket, preprocessor, duckpipe, lakeshape, foreman and mcp-hub
+report this way.
 
 ## Directly
 

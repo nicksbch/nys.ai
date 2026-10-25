@@ -6,8 +6,9 @@ DuckDB table, a few seconds after it lands (for example from `url-to-bucket`).
 
 The tables stay on S3. They are a [DuckLake](https://ducklake.select): the data
 is Parquet files in a bucket (`s3://lake/` by default), and a small catalog
-(an SQLite file on the server) lists the tables, their columns and every
-snapshot. Any DuckDB 1.5+ can query them, with time travel.
+(a PostgreSQL database on the server, set up by
+`../linux-scripts/ducklake-setup.sh`) lists the tables, their columns and
+every snapshot. Any DuckDB 1.5+ can query them, with time travel.
 
 duckpipe itself is plain Go. It does the loading by running the official
 `duckdb` CLI (1.5 or newer), which `install.sh` puts on the server and which
@@ -109,20 +110,21 @@ Pick the catalog by who needs to read the tables:
 
 | `catalog`                              | Who can query while duckpipe runs                        |
 |----------------------------------------|----------------------------------------------------------|
-| `ducklake:sqlite:/path/catalog.sqlite` | Anyone on the server who can read the file (default)     |
-| `ducklake:postgres:dbname=lake host=…` | Any machine that can reach Postgres                      |
+| `ducklake:sqlite:/path/catalog.sqlite` | Anyone on the server who can read the file               |
+| `ducklake:postgres:dbname=lake host=…` | Any machine that can reach Postgres (the server's)       |
 | `ducklake:/path/catalog.ducklake`      | Nobody else: DuckDB locks the file                       |
 
 ## Query the tables
 
-With DuckDB **1.5 or newer** (older versions can't read this DuckLake format).
-On the server, `sudo -u duckpipe duckdb` (the CLI `install.sh` installed) can
-open the default SQLite catalog; with a Postgres catalog, any machine can:
+The easiest way is [lake-ui](../lake-ui). From DuckDB **1.5 or newer** (older
+versions can't read this DuckLake format), on any machine that can reach the
+server's Postgres, with the catalog login and an S3 key from
+`/etc/ducklake.env` (the catalog's password in `PGPASSWORD`):
 
 ```sql
 CREATE SECRET (TYPE s3, KEY_ID 'GK…', SECRET '…', REGION 'garage',
                ENDPOINT '192.168.1.169:3900', URL_STYLE 'path', USE_SSL false);
-ATTACH 'ducklake:sqlite:/var/lib/duckpipe/catalog.sqlite' AS lake (READ_ONLY);
+ATTACH 'ducklake:postgres:dbname=ducklake host=192.168.1.169 user=ducklake' AS lake (READ_ONLY);
 
 FROM lake.raw.orders LIMIT 10;
 SELECT record->>'order_id' AS order_id, (record->>'amount')::DECIMAL(10, 2) AS amount, _file

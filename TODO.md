@@ -46,6 +46,20 @@ become cards you **Start**. First and only tool: url-to-bucket's
 `download` (plus a new read-only `list_buckets`). Each card follows its
 download on relay until it ends.
 
+## mcp-hub
+
+### A token per profile — `idea`
+
+Today one `MCP_HUB_TOKEN` opens `/mcp` and every profile, and analyst,
+nexus and foreman all hold it (copied into `/etc/analyst.env`,
+`/etc/nexus.env`, `/etc/foreman.env`). A profile keeps a model's toolset
+small but isn't a permission: anything with the token can call any tool,
+`url-to-bucket__download` included, without foreman's Approve or nexus's
+Start. That matters more once repo-mcp's `open_pull_request` is in the
+hub. Idea: each profile gets its own token (in `/etc/mcp-hub.env`), a
+token only opens its profile, and each service's install copies only the
+one it needs. Plain `/mcp` keeps the hub token, for you.
+
 ## foreman
 
 ### Agents that act — `approved`

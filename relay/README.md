@@ -163,8 +163,14 @@ same event.
   As a service it also reads that topic: publish a `requested` event with
   `data: {url, bucket, key?}` and it runs the download, with your `run_id`
   and `cause` set to the request (see `url-to-bucket/serve.go`).
-- **duckpipe** publishes `duckpipe.ingest` and `duckpipe.poll` (see its
-  README).
+- **preprocessor** publishes `preprocessor.unzip` and `preprocessor.poll`.
+- **duckpipe** publishes `duckpipe.ingest` and `duckpipe.poll`.
+- **lakeshape** publishes `lakeshape.run`, `lakeshape.model` and
+  `lakeshape.project`, and reads its triggers through consumer `lakeshape`.
+- **foreman** publishes `foreman.<task type>` for tasks, runs and actions.
+- **mcp-hub** publishes `mcp-hub.call` for every tool call.
+
+Each one's README has its events and their `data`.
 
 ## Dashboard
 

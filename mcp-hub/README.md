@@ -1,7 +1,7 @@
 # mcp-hub
 
-One MCP endpoint for every service on the server. Each service (vigil today;
-url-to-bucket, the lakehouse and others later) serves its own tools over MCP.
+One MCP endpoint for every service on the server. Each service (vigil,
+semantic and url-to-bucket today) serves its own tools over MCP.
 mcp-hub reads a list of those servers, joins their tools into one catalogue,
 and forwards each call to the server that owns it. Agents connect to the hub
 only: one URL, one token.
