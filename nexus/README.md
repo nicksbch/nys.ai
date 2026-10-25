@@ -7,8 +7,9 @@ then follows the download until it ends, and the model is told how it went,
 so "did it work?" and "now the arm64 one" work as follow-ups.
 
 - **What it can do** is exactly the tools of mcp-hub's `nexus` profile:
-  today url-to-bucket's `download`, and `list_buckets` so the model doesn't
-  guess bucket names. A new capability is a tool added to that profile.
+  today url-to-bucket's `download`, plus `list_buckets` and `list_objects`
+  so the model can see the buckets and their folders, and put a file next
+  to similar ones instead of guessing. A new capability is a tool added to that profile.
 - **Read-only tools run right away.** A tool that changes something is only
   proposed: its arguments are checked against the tool's schema, and it
   becomes a card with **Start** and **Cancel**. **Start** calls it once,
