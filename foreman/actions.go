@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	mcphub "mcp-hub/client"
 	relay "relay/client"
 )
 
@@ -125,11 +126,11 @@ func (e *engine) callAction(ctx context.Context, id, run string) {
 	case err != nil:
 		e.endAction(t, a, actionFailed, "", err.Error())
 	case res.IsError:
-		e.endAction(t, a, actionFailed, "", resultText(res))
+		e.endAction(t, a, actionFailed, "", mcphub.ResultText(res))
 	default:
-		runID, topic := jobOf(res)
+		runID, topic := mcphub.JobOf(res)
 		if runID == "" {
-			e.endAction(t, a, actionDone, resultText(res), "")
+			e.endAction(t, a, actionDone, mcphub.ResultText(res), "")
 			return
 		}
 		if err := e.store.write(logRecord{Op: "action_called", Task: id, ActionRun: a.Run, JobRun: runID, JobTopic: topic}); err != nil {
@@ -157,18 +158,6 @@ func (e *engine) lookBack(ctx context.Context, runID, topic string) {
 	for _, ev := range resp.Events {
 		e.jobEnded(ev)
 	}
-}
-
-// jobOf returns the job a long tool started: its result's structured
-// content holds run_id and topic. Both are "" for any other result.
-func jobOf(res *mcp.CallToolResult) (runID, topic string) {
-	m, _ := res.StructuredContent.(map[string]any)
-	runID, _ = m["run_id"].(string)
-	topic, _ = m["topic"].(string)
-	if runID == "" || topic == "" {
-		return "", ""
-	}
-	return runID, topic
 }
 
 func (e *engine) endAction(t *Task, a *Action, state, output, errText string) {

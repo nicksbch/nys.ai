@@ -31,13 +31,15 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"chatapi"
 )
 
 //go:embed index.html
 var indexHTML []byte
 
 type app struct {
-	cfg    *Config
+	cfg    *chatapi.Config
 	sem    *semantic
 	store  *store
 	limits turnLimits
@@ -64,7 +66,7 @@ func main() {
 	timeout := fs.Duration("timeout", 10*time.Minute, "longest a question may take")
 	fs.Parse(os.Args[2:])
 
-	cfg, err := loadConfig(*configDir, os.Getenv)
+	cfg, err := chatapi.LoadConfig(*configDir, os.Getenv, "/etc/analyst.env")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "analyst:", err)
 		os.Exit(2)
@@ -98,7 +100,7 @@ func main() {
 
 // check reports whether the hub profile and the models answer: 0 if they
 // all do, 1 if not (the config itself loaded, or main would have exited 2).
-func check(cfg *Config, sem *semantic) int {
+func check(cfg *chatapi.Config, sem *semantic) int {
 	ctx := context.Background()
 	rc := 0
 	if sess, err := sem.connect(ctx); err != nil {
@@ -114,8 +116,8 @@ func check(cfg *Config, sem *semantic) int {
 			fmt.Printf("hub: %d tools from %s\n", len(tools), sem.url)
 		}
 	}
-	for _, name := range cfg.modelNames() {
-		if err := pingModel(ctx, cfg.Models[name]); err != nil {
+	for _, name := range cfg.ModelNames() {
+		if err := chatapi.Ping(ctx, cfg.Models[name]); err != nil {
 			fmt.Printf("model %s: %v\n", name, err)
 			rc = 1
 		} else {
@@ -158,7 +160,7 @@ func (a *app) routes() http.Handler {
 		w.Write(indexHTML)
 	})
 	mux.Handle("GET /api/models", handler(func(r *http.Request) (any, error) {
-		return map[string]any{"models": a.cfg.modelNames(), "default": a.cfg.Default}, nil
+		return map[string]any{"models": a.cfg.ModelNames(), "default": a.cfg.Default}, nil
 	}))
 	mux.Handle("GET /api/conversations", handler(func(r *http.Request) (any, error) { return a.store.conversations(), nil }))
 	mux.Handle("POST /api/conversations", handler(a.newConversation))
@@ -189,7 +191,7 @@ func (a *app) newConversation(r *http.Request) (any, error) {
 		return nil, fail(http.StatusBadRequest, "unknown model %q", in.Model)
 	}
 	now := time.Now().UTC()
-	c := &Conversation{ID: newID("c"), Model: in.Model, Created: now, Updated: now, Messages: []chatMsg{}, Results: map[string]Result{}}
+	c := &Conversation{ID: newID("c"), Model: in.Model, Created: now, Updated: now, Messages: []chatapi.Msg{}, Results: map[string]Result{}}
 	if err := a.store.saveConversation(c); err != nil {
 		return nil, err
 	}
@@ -320,7 +322,7 @@ func (a *app) saveReport(r *http.Request) (any, error) {
 	}
 	// The steps are the calls as the conversation made them, never as the
 	// page sends them.
-	calls := map[string]chatCall{}
+	calls := map[string]chatapi.Call{}
 	for _, m := range c.Messages {
 		for _, tc := range m.ToolCalls {
 			calls[tc.ID] = tc
@@ -338,7 +340,7 @@ func (a *app) saveReport(r *http.Request) (any, error) {
 		if len(s.Chart) > 0 && !json.Valid(s.Chart) {
 			return nil, fail(http.StatusBadRequest, "chart is not valid JSON")
 		}
-		rep.Steps = append(rep.Steps, Step{Tool: tc.Function.Name, Args: argsJSON(tc.Function.Arguments), Chart: s.Chart})
+		rep.Steps = append(rep.Steps, Step{Tool: tc.Function.Name, Args: chatapi.ArgsJSON(tc.Function.Arguments), Chart: s.Chart})
 	}
 	if err := a.store.saveReport(rep); err != nil {
 		return nil, err

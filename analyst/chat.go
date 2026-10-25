@@ -11,6 +11,9 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"chatapi"
+	mcphub "mcp-hub/client"
 )
 
 // event is what the page receives while a turn runs, and also how it reads
@@ -40,7 +43,7 @@ func (a *app) turn(ctx context.Context, c *Conversation, text string, emit func(
 		emit(event{Type: "error", Text: msg})
 		// Kept in the conversation, so the page shows it after a reload and
 		// the model knows the last turn went wrong.
-		c.Messages = append(c.Messages, chatMsg{Role: "assistant", Content: "[analyst: " + msg + "]"})
+		c.Messages = append(c.Messages, chatapi.Msg{Role: "assistant", Content: "[analyst: " + msg + "]"})
 		a.save(c)
 	}
 
@@ -48,7 +51,7 @@ func (a *app) turn(ctx context.Context, c *Conversation, text string, emit func(
 	if m == nil {
 		m = a.cfg.Models[a.cfg.Default]
 	}
-	c.Messages = append(c.Messages, chatMsg{Role: "user", Content: text})
+	c.Messages = append(c.Messages, chatapi.Msg{Role: "user", Content: text})
 	if c.Title == "" {
 		c.Title = title(text)
 	}
@@ -71,7 +74,7 @@ func (a *app) turn(ctx context.Context, c *Conversation, text string, emit func(
 			fail("stopped after %d steps without an answer; ask again, more narrowly", a.limits.MaxSteps)
 			return
 		}
-		r, msg, err := complete(ctx, m, a.cfg.Prompt, c.Messages, tools)
+		r, msg, err := chatapi.Complete(ctx, m, a.cfg.Prompt, c.Messages, tools)
 		if err != nil {
 			if ctx.Err() != nil {
 				fail("stopped: the turn took longer than %s", a.limits.Timeout)
@@ -101,11 +104,11 @@ func (a *app) turn(ctx context.Context, c *Conversation, text string, emit func(
 			text, isErr := a.sem.call(ctx, sess, call.Name, call.Args)
 			c.Results[call.ID] = Result{Text: text, Error: isErr}
 			emit(event{Type: "result", ID: call.ID, Text: text, Error: isErr})
-			forModel := cutForModel(text)
+			forModel := mcphub.CutForModel(text, maxToolText, cutHint)
 			if isErr {
 				forModel = "ERROR: " + forModel
 			}
-			c.Messages = append(c.Messages, chatMsg{Role: "tool", ToolCallID: call.ID, Content: forModel})
+			c.Messages = append(c.Messages, chatapi.Msg{Role: "tool", ToolCallID: call.ID, Content: forModel})
 		}
 		a.save(c)
 	}
@@ -135,7 +138,7 @@ func items(c *Conversation) []event {
 				out = append(out, event{Type: "text", Text: t})
 			}
 			for _, tc := range m.ToolCalls {
-				out = append(out, event{Type: "call", ID: tc.ID, Name: tc.Function.Name, Args: argsJSON(tc.Function.Arguments)})
+				out = append(out, event{Type: "call", ID: tc.ID, Name: tc.Function.Name, Args: chatapi.ArgsJSON(tc.Function.Arguments)})
 				if r, ok := c.Results[tc.ID]; ok {
 					out = append(out, event{Type: "result", ID: tc.ID, Text: r.Text, Error: r.Error})
 				}

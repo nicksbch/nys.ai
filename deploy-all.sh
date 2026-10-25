@@ -147,6 +147,11 @@ for s in "${steps[@]}"; do
   fi
   (cd "$s" && go vet ./... && go test -count=1 ./... && go build -o /dev/null .) || die "$s does not build or its tests fail; nothing was deployed"
 done
+# chatapi is a library built into analyst and nexus, so it is tested with them.
+if has analyst "${steps[@]}" || has nexus "${steps[@]}"; then
+  log "Checking chatapi"
+  (cd chatapi && go vet ./... && go test -count=1 ./...) || die "chatapi's tests fail; nothing was deployed"
+fi
 
 # --- Steps -------------------------------------------------------------------
 # run_setup STEP: copies a linux-scripts setup script to the server and runs

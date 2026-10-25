@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"chatapi"
 )
 
 // Conversation is one chat: the messages as the model sees them, and the
@@ -25,7 +27,7 @@ type Conversation struct {
 	Model    string            `json:"model"`
 	Created  time.Time         `json:"created"`
 	Updated  time.Time         `json:"updated"`
-	Messages []chatMsg         `json:"messages"`
+	Messages []chatapi.Msg     `json:"messages"`
 	Results  map[string]Result `json:"results"` // by tool call id
 }
 
@@ -123,7 +125,7 @@ func (s *store) conversation(id string) *Conversation {
 		return nil
 	}
 	cp := *c
-	cp.Messages = append([]chatMsg(nil), c.Messages...)
+	cp.Messages = append([]chatapi.Msg(nil), c.Messages...)
 	cp.Results = make(map[string]Result, len(c.Results))
 	for k, v := range c.Results {
 		cp.Results[k] = v

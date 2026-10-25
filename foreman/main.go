@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	mcphub "mcp-hub/client"
 	relay "relay/client"
 )
 
@@ -268,10 +269,10 @@ func checkActions(tt *TaskType, profile string, tools map[string]*mcp.Tool) erro
 		switch {
 		case t == nil:
 			return fmt.Errorf("tasks/%s.md: action %s is not in profile %s", tt.Name, name, profile)
-		case readOnly(t):
+		case mcphub.ReadOnly(t):
 			return fmt.Errorf("tasks/%s.md: action %s is read-only, so it is offered anyway; remove it from actions", tt.Name, name)
 		}
-		if p := previewName(t); p != "" && (tools[p] == nil || !readOnly(tools[p])) {
+		if p := previewName(t); p != "" && (tools[p] == nil || !mcphub.ReadOnly(tools[p])) {
 			return fmt.Errorf("tasks/%s.md: action %s: its preview %s is missing from profile %s or not read-only", tt.Name, name, p, profile)
 		}
 	}

@@ -8,13 +8,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"slices"
 	"strings"
 	"time"
 
-	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	mcphub "mcp-hub/client"
 )
 
 const (
@@ -168,29 +167,12 @@ func run(ctx context.Context, spec runSpec, rec recorder) (*runResult, error) {
 
 // --- tools --------------------------------------------------------------------
 
-// runIDTransport sends the hub's token and the run id on every request, so
-// mcp-hub can link its audit events to this run.
-type runIDTransport struct{ token, runID string }
-
-func (t runIDTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	r = r.Clone(r.Context())
-	if t.token != "" {
-		r.Header.Set("Authorization", "Bearer "+t.token)
-	}
-	r.Header.Set("X-Run-Id", t.runID)
-	return http.DefaultTransport.RoundTrip(r)
-}
-
 func connectHub(ctx context.Context, spec runSpec) (*mcp.ClientSession, error) {
 	url := strings.TrimRight(spec.HubURL, "/") + "/mcp"
 	if spec.Agent.Profile != "all" {
 		url += "/" + spec.Agent.Profile
 	}
-	c := mcp.NewClient(&mcp.Implementation{Name: "foreman", Version: "1"}, nil)
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	return c.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: url, MaxRetries: -1, DisableStandaloneSSE: true,
-		HTTPClient: &http.Client{Transport: runIDTransport{spec.HubToken, spec.RunID}}}, nil)
+	return mcphub.Connect(ctx, "foreman", url, spec.HubToken, spec.RunID)
 }
 
 // toolSet is what a run gets of its profile's tools.
@@ -211,11 +193,9 @@ func hubTools(ctx context.Context, hub *mcp.ClientSession, actions []string) (*t
 			return nil, err
 		}
 		ts.all[t.Name] = t
-		var schema map[string]any
-		b, _ := json.Marshal(t.InputSchema)
-		json.Unmarshal(b, &schema)
+		schema := mcphub.Schema(t)
 		switch {
-		case readOnly(t):
+		case mcphub.ReadOnly(t):
 			ts.offered = append(ts.offered, toolDef{Name: t.Name, Description: t.Description, Schema: schema})
 		case slices.Contains(actions, t.Name):
 			ts.actions[t.Name] = t
@@ -226,8 +206,6 @@ func hubTools(ctx context.Context, hub *mcp.ClientSession, actions []string) (*t
 	}
 	return ts, nil
 }
-
-func readOnly(t *mcp.Tool) bool { return t.Annotations != nil && t.Annotations.ReadOnlyHint }
 
 // previewName is the hub name of a tool's preview: a read-only tool on the
 // same server, named in its _meta, that checks the same arguments without
@@ -280,7 +258,7 @@ func checkProposal(ctx context.Context, hub *mcp.ClientSession, ts *toolSet, t *
 	if len(raw) > 0 && json.Unmarshal(raw, &args) != nil {
 		return nil, errors.New("the arguments are not a valid JSON object")
 	}
-	if err := validateArgs(t.InputSchema, args); err != nil {
+	if err := mcphub.ValidateArgs(t.InputSchema, args); err != nil {
 		return nil, fmt.Errorf("the arguments don't fit %s's input schema: %v", t.Name, err)
 	}
 	b, _ := json.Marshal(args)
@@ -293,7 +271,7 @@ func checkProposal(ctx context.Context, hub *mcp.ClientSession, ts *toolSet, t *
 	switch {
 	case pt == nil:
 		return nil, fmt.Errorf("can't propose %s: its preview tool %s is not in this profile", t.Name, name)
-	case !readOnly(pt):
+	case !mcphub.ReadOnly(pt):
 		return nil, fmt.Errorf("can't propose %s: its preview tool %s isn't read-only", t.Name, name)
 	}
 	r, err := hub.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
@@ -301,30 +279,10 @@ func checkProposal(ctx context.Context, hub *mcp.ClientSession, ts *toolSet, t *
 		return nil, fmt.Errorf("the check before proposing (%s) could not run: %v", name, err)
 	}
 	if r.IsError {
-		return nil, fmt.Errorf("the check before proposing (%s) failed, so nothing was proposed: %s", name, resultText(r))
+		return nil, fmt.Errorf("the check before proposing (%s) failed, so nothing was proposed: %s", name, mcphub.ResultText(r))
 	}
-	p.Preview = resultText(r)
+	p.Preview = mcphub.ResultText(r)
 	return p, nil
-}
-
-// validateArgs checks arguments against a tool's input schema.
-func validateArgs(schema any, args map[string]any) error {
-	if schema == nil {
-		return nil
-	}
-	b, err := json.Marshal(schema)
-	if err != nil {
-		return err
-	}
-	var s jsonschema.Schema
-	if err := json.Unmarshal(b, &s); err != nil {
-		return fmt.Errorf("the tool's schema can't be read: %v", err)
-	}
-	rs, err := s.Resolve(nil)
-	if err != nil {
-		return fmt.Errorf("the tool's schema can't be used: %v", err)
-	}
-	return rs.Validate(args)
 }
 
 func callTool(ctx context.Context, hub *mcp.ClientSession, c toolCall, offered []string, step int, rec recorder) toolResult {
@@ -342,46 +300,14 @@ func callTool(ctx context.Context, hub *mcp.ClientSession, c toolCall, offered [
 		if err != nil {
 			full, out.IsError = err.Error(), true
 		} else {
-			full, out.IsError = resultText(res), res.IsError
+			full, out.IsError = mcphub.ResultText(res), res.IsError
 		}
 	}
-	out.Text = cutForModel(full)
+	out.Text = mcphub.CutForModel(full, maxToolText, "")
 	rec("tool", map[string]any{"step": step, "name": c.Name, "args": c.Args, "result": full, "error": out.IsError,
 		"cut": len(out.Text) != len(full), "duration_ms": time.Since(start).Milliseconds()})
 	return out
 }
-
-// resultText is what the model sees of an MCP result: its text, or its
-// structured content as JSON when there is no text.
-func resultText(res *mcp.CallToolResult) string {
-	var s []string
-	for _, c := range res.Content {
-		if t, ok := c.(*mcp.TextContent); ok {
-			s = append(s, t.Text)
-		}
-	}
-	if len(s) == 0 && res.StructuredContent != nil {
-		b, _ := json.Marshal(res.StructuredContent)
-		return string(b)
-	}
-	return strings.Join(s, "\n")
-}
-
-// cutForModel shortens a long result and says so, so the model knows it
-// didn't get everything.
-func cutForModel(s string) string {
-	if len(s) <= maxToolText {
-		return s
-	}
-	cut := s[:maxToolText]
-	for len(cut) > 0 && !utf8Start(s[len(cut)]) {
-		cut = cut[:len(cut)-1]
-	}
-	return fmt.Sprintf("%s\n[cut: %d more bytes]", cut, len(s)-len(cut))
-}
-
-// utf8Start reports whether b can begin a UTF-8 character.
-func utf8Start(b byte) bool { return b&0xC0 != 0x80 }
 
 // submitDef is the tool that ends a run with the task type's result fields.
 func submitDef(fields []string) toolDef {

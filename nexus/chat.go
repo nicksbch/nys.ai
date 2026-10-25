@@ -14,7 +14,9 @@ import (
 	"strings"
 	"time"
 
+	"chatapi"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	mcphub "mcp-hub/client"
 )
 
 const (
@@ -54,7 +56,7 @@ func (a *app) turn(ctx context.Context, c *Conversation, text string, emit func(
 		emit(event{Type: "error", Text: msg})
 		// Kept in the conversation, so the page shows it after a reload and
 		// the model knows the last turn went wrong.
-		c.Messages = append(c.Messages, chatMsg{Role: "assistant", Content: "[nexus: " + msg + "]"})
+		c.Messages = append(c.Messages, chatapi.Msg{Role: "assistant", Content: "[nexus: " + msg + "]"})
 		a.save(c)
 	}
 
@@ -67,7 +69,7 @@ func (a *app) turn(ctx context.Context, c *Conversation, text string, emit func(
 		emit(event{Type: "note", Text: note})
 		content = noteStart + note + noteEnd + text
 	}
-	c.Messages = append(c.Messages, chatMsg{Role: "user", Content: content})
+	c.Messages = append(c.Messages, chatapi.Msg{Role: "user", Content: content})
 	if c.Title == "" {
 		c.Title = title(text)
 	}
@@ -90,7 +92,7 @@ func (a *app) turn(ctx context.Context, c *Conversation, text string, emit func(
 			fail("stopped after %d steps without an answer; ask again, more simply", a.limits.MaxSteps)
 			return
 		}
-		r, msg, err := complete(ctx, m, a.cfg.Prompt, c.Messages, ts.defs)
+		r, msg, err := chatapi.Complete(ctx, m, a.cfg.Prompt, c.Messages, ts.defs)
 		if err != nil {
 			if ctx.Err() != nil {
 				fail("stopped: the turn took longer than %s", a.limits.Timeout)
@@ -117,7 +119,7 @@ func (a *app) turn(ctx context.Context, c *Conversation, text string, emit func(
 		}
 		for _, tc := range r.Calls {
 			forModel := a.handleCall(ctx, sess, c, ts, tc, emit)
-			c.Messages = append(c.Messages, chatMsg{Role: "tool", ToolCallID: tc.ID, Content: forModel})
+			c.Messages = append(c.Messages, chatapi.Msg{Role: "tool", ToolCallID: tc.ID, Content: forModel})
 		}
 		a.save(c)
 	}
@@ -125,14 +127,14 @@ func (a *app) turn(ctx context.Context, c *Conversation, text string, emit func(
 
 // handleCall runs a read-only tool, or proposes a call to any other as a
 // card, and returns what the model is told.
-func (a *app) handleCall(ctx context.Context, sess *mcp.ClientSession, c *Conversation, ts *toolSet, tc toolCall, emit func(event)) string {
+func (a *app) handleCall(ctx context.Context, sess *mcp.ClientSession, c *Conversation, ts *toolSet, tc chatapi.ToolCall, emit func(event)) string {
 	t := ts.byName[tc.Name]
-	args, err := parseArgs(tc.Args)
+	args, err := mcphub.ParseArgs(tc.Args)
 	switch {
 	case t == nil:
 		err = fmt.Errorf("there is no tool named %q", tc.Name)
-	case err == nil && !readOnly(t):
-		if err = validateArgs(t.InputSchema, args); err != nil {
+	case err == nil && !mcphub.ReadOnly(t):
+		if err = mcphub.ValidateArgs(t.InputSchema, args); err != nil {
 			err = fmt.Errorf("the arguments don't fit %s's input schema, so nothing was proposed: %v", tc.Name, err)
 		}
 	}
@@ -143,7 +145,7 @@ func (a *app) handleCall(ctx context.Context, sess *mcp.ClientSession, c *Conver
 		emit(event{Type: "result", ID: tc.ID, Text: err.Error(), Error: true})
 		return "ERROR: " + err.Error()
 	}
-	if !readOnly(t) {
+	if !mcphub.ReadOnly(t) {
 		b, _ := json.Marshal(args)
 		card := &Card{ID: tc.ID, Tool: tc.Name, Args: b, State: cardProposed}
 		if err := a.store.putCard(c.ID, card); err != nil {
@@ -160,9 +162,9 @@ func (a *app) handleCall(ctx context.Context, sess *mcp.ClientSession, c *Conver
 	c.Results[tc.ID] = Result{Text: text, Error: isErr}
 	emit(event{Type: "result", ID: tc.ID, Text: text, Error: isErr})
 	if isErr {
-		return "ERROR: " + cutForModel(text)
+		return "ERROR: " + mcphub.CutForModel(text, maxToolText, "")
 	}
-	return cutForModel(text)
+	return mcphub.CutForModel(text, maxToolText, "")
 }
 
 // supersede replaces the conversation's earlier cards that ask for the same
@@ -276,7 +278,7 @@ func items(c *Conversation, cards map[string]*Card) []event {
 					out = append(out, event{Type: "card", ID: tc.ID, Card: card})
 					continue
 				}
-				out = append(out, event{Type: "call", ID: tc.ID, Name: tc.Function.Name, Args: argsJSON(tc.Function.Arguments)})
+				out = append(out, event{Type: "call", ID: tc.ID, Name: tc.Function.Name, Args: chatapi.ArgsJSON(tc.Function.Arguments)})
 				if r, ok := c.Results[tc.ID]; ok {
 					out = append(out, event{Type: "result", ID: tc.ID, Text: r.Text, Error: r.Error})
 				}

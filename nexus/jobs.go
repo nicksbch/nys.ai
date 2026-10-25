@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	mcphub "mcp-hub/client"
 )
 
 // Variables so tests can shorten them.
@@ -78,7 +80,7 @@ func (a *app) callCard(conv, id string) {
 		return
 	}
 	defer sess.Close()
-	args, _ := parseArgs(card.Args)
+	args, _ := mcphub.ParseArgs(card.Args)
 	res, text, isErr := call(ctx, sess, card.Tool, args)
 	switch {
 	case a.ctx.Err() != nil:
@@ -87,7 +89,7 @@ func (a *app) callCard(conv, id string) {
 		a.end(conv, id, cardFailed, "", text)
 		return
 	}
-	runID, topic := jobOf(res)
+	runID, topic := mcphub.JobOf(res)
 	if runID == "" {
 		a.end(conv, id, cardDone, text, "")
 		return

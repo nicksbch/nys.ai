@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"chatapi"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	relay "relay/client"
 )
@@ -206,8 +207,8 @@ func (e *env) app(t *testing.T) *app {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	cfg := &Config{Default: "local", Prompt: "help",
-		Models: map[string]*ModelConf{"local": {URL: e.model.srv.URL + "/v1", Model: "local", MaxTokens: 100}}}
+	cfg := &chatapi.Config{Default: "local", Prompt: "help",
+		Models: map[string]*chatapi.Model{"local": {URL: e.model.srv.URL + "/v1", Model: "local", MaxTokens: 100}}}
 	a := &app{ctx: ctx, cfg: cfg, store: st, limits: turnLimits{MaxSteps: 5, Timeout: time.Minute}, logf: t.Logf, busy: map[string]bool{},
 		hub:   &hubClient{url: e.hub.srv.URL + "/mcp/nexus", token: "hub-token"},
 		relay: &relay.Client{URL: e.relay.srv.URL, HTTP: &http.Client{}}}
@@ -517,7 +518,7 @@ func TestAuth(t *testing.T) {
 }
 
 func TestConfig(t *testing.T) {
-	cfg, err := loadConfig("config", func(string) string { return "" })
+	cfg, err := chatapi.LoadConfig("config", func(string) string { return "" }, "")
 	if err != nil || cfg.Models[cfg.Default] == nil || !strings.Contains(cfg.Prompt, "url-to-bucket__download") {
 		t.Fatalf("config/: %v", err)
 	}

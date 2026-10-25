@@ -39,9 +39,10 @@ The design and its reasons are in [SPEC.md](SPEC.md).
 | `chat.go`     | One turn: the model, read-only calls, proposals, notes on ended cards     |
 | `tools.go`    | The hub profile: tools, the schema check, calls                           |
 | `jobs.go`     | Cards: **Start**, **Cancel**, following a job on relay, restarts          |
-| `model.go`    | The chat completions API, `models.json` and `prompt.md` (as in analyst)   |
 | `store.go`    | Conversations, and each one's cards, a JSON file each                     |
 | `index.html`  | The page. Built into the binary                                           |
+| [`../chatapi`](../chatapi) | Shared with analyst: the chat completions API, `models.json` and `prompt.md` |
+| [`../mcp-hub/client`](../mcp-hub/client) | Shared with analyst and foreman: connecting to the hub, the schema check, results |
 | `config/`     | The server's config: `models.json`, `prompt.md`. Deployed as is           |
 | `deploy.sh`   | Run on your Mac: builds the binary and installs it on the server          |
 | `install.sh`  | Run on the server by `deploy.sh`: binary, secrets, config, systemd service |

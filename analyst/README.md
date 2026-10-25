@@ -46,8 +46,9 @@ conversation saved, so a turn carries on if the page is closed.
 |----------------|--------------------------------------------------------------------------|
 | `main.go`      | `serve` and `check`, the JSON API, the login                             |
 | `chat.go`      | One turn: the model, the tools, the events the page receives             |
-| `model.go`     | The chat completions API, `models.json` and `prompt.md`                  |
 | `semantic.go`  | The hub's analyst profile: tools, calls, cutting results for the model   |
+| [`../chatapi`](../chatapi) | Shared with nexus: the chat completions API, `models.json` and `prompt.md` |
+| [`../mcp-hub/client`](../mcp-hub/client) | Shared with nexus and foreman: connecting to the hub, results, cutting |
 | `store.go`     | Conversations and reports, a JSON file each                              |
 | `index.html`   | The page: chat, query cards, charts (SVG), reports. Built into the binary |
 | `config/`      | The server's config: `models.json`, `prompt.md`. Deployed as is          |

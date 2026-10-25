@@ -7,13 +7,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"chatapi"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -107,8 +106,8 @@ func newTestApp(t *testing.T, model *fakeModel, hub *fakeHub) (*app, *httptest.S
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := &Config{Default: "local", Prompt: "be an analyst",
-		Models: map[string]*ModelConf{"local": {URL: model.srv.URL + "/v1", Model: "local", MaxTokens: 100}}}
+	cfg := &chatapi.Config{Default: "local", Prompt: "be an analyst",
+		Models: map[string]*chatapi.Model{"local": {URL: model.srv.URL + "/v1", Model: "local", MaxTokens: 100}}}
 	a := &app{cfg: cfg, store: st, limits: turnLimits{MaxSteps: 5, Timeout: time.Minute}, logf: t.Logf, busy: map[string]bool{},
 		sem: &semantic{url: hub.srv.URL + "/mcp/analyst", token: "hub-token", prefix: "semantic__"}}
 	srv := httptest.NewServer(guard("", a.routes()))
@@ -350,37 +349,11 @@ func TestGuard(t *testing.T) {
 
 // The config deploy.sh installs on the server.
 func TestRepoConfig(t *testing.T) {
-	c, err := loadConfig("config", func(string) string { return "key" })
+	c, err := chatapi.LoadConfig("config", func(string) string { return "key" }, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.Models[c.Default] == nil || c.Prompt == "" {
 		t.Errorf("config = %+v", c)
-	}
-}
-
-func TestConfigErrors(t *testing.T) {
-	for _, tc := range []struct{ models, want string }{
-		{`{"default": "a", "models": {}}`, "no models"},
-		{`{"default": "b", "models": {"a": {"url": "http://x/v1", "model": "m"}}}`, "default"},
-		{`{"default": "a", "models": {"a": {"url": "x", "model": "m"}}}`, "url"},
-		{`{"default": "a", "models": {"a": {"url": "http://x/v1", "model": "m", "key_env": "K"}}}`, "K is not set"},
-		{`{"default": "a", "models": {"a": {"url": "http://x/v1", "model": "m"}}, "extra": 1}`, "unknown field"},
-	} {
-		dir := t.TempDir()
-		os.WriteFile(filepath.Join(dir, "models.json"), []byte(tc.models), 0o644)
-		os.WriteFile(filepath.Join(dir, "prompt.md"), []byte("hi"), 0o644)
-		if _, err := loadConfig(dir, func(string) string { return "" }); err == nil || !strings.Contains(err.Error(), tc.want) {
-			t.Errorf("%s: got %v, want %q", tc.models, err, tc.want)
-		}
-	}
-}
-
-func TestCutAndArgs(t *testing.T) {
-	if s := cutForModel(strings.Repeat("é", maxToolText)); !strings.Contains(s, "[cut:") || !json.Valid([]byte(mustJSON(s))) {
-		t.Errorf("cut = %.50q", s)
-	}
-	if string(argsJSON("")) != "{}" || string(argsJSON(`{"a":1}`)) != `{"a":1}` || string(argsJSON(`{bad`)) != `"{bad"` {
-		t.Errorf("argsJSON")
 	}
 }

@@ -32,6 +32,8 @@ import (
 	"syscall"
 	"time"
 
+	"chatapi"
+	mcphub "mcp-hub/client"
 	relay "relay/client"
 )
 
@@ -40,7 +42,7 @@ var indexHTML []byte
 
 type app struct {
 	ctx    context.Context // ends when nexus stops
-	cfg    *Config
+	cfg    *chatapi.Config
 	hub    *hubClient
 	relay  *relay.Client // nil: jobs can't be followed
 	store  *store
@@ -68,7 +70,7 @@ func main() {
 	timeout := fs.Duration("timeout", 5*time.Minute, "longest a message may take to answer")
 	fs.Parse(os.Args[2:])
 
-	cfg, err := loadConfig(*configDir, os.Getenv)
+	cfg, err := chatapi.LoadConfig(*configDir, os.Getenv, "/etc/nexus.env")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "nexus:", err)
 		os.Exit(2)
@@ -110,7 +112,7 @@ func main() {
 // check reports whether the hub profile and the models answer, and whether
 // each model takes a tool call: 0 if all do, 1 if not (the config itself
 // loaded, or main would have exited 2).
-func check(cfg *Config, h *hubClient) int {
+func check(cfg *chatapi.Config, h *hubClient) int {
 	ctx := context.Background()
 	rc := 0
 	if sess, err := h.connect(ctx, "check"); err != nil {
@@ -125,7 +127,7 @@ func check(cfg *Config, h *hubClient) int {
 		} else {
 			var ro, act []string
 			for _, d := range ts.defs {
-				if readOnly(ts.byName[d.Name]) {
+				if mcphub.ReadOnly(ts.byName[d.Name]) {
 					ro = append(ro, d.Name)
 				} else {
 					act = append(act, d.Name)
@@ -134,8 +136,8 @@ func check(cfg *Config, h *hubClient) int {
 			fmt.Printf("hub: %s: run right away: %s; start from a card: %s\n", h.url, list(ro), list(act))
 		}
 	}
-	for _, name := range cfg.modelNames() {
-		if err := testModel(ctx, cfg.Models[name]); err != nil {
+	for _, name := range cfg.ModelNames() {
+		if err := chatapi.TestTools(ctx, cfg.Models[name]); err != nil {
 			fmt.Printf("model %s: %v\n", name, err)
 			rc = 1
 		} else {
@@ -185,7 +187,7 @@ func (a *app) routes() http.Handler {
 		w.Write(indexHTML)
 	})
 	mux.Handle("GET /api/models", handler(func(r *http.Request) (any, error) {
-		return map[string]any{"models": a.cfg.modelNames(), "default": a.cfg.Default}, nil
+		return map[string]any{"models": a.cfg.ModelNames(), "default": a.cfg.Default}, nil
 	}))
 	mux.Handle("GET /api/conversations", handler(func(r *http.Request) (any, error) { return a.store.conversations(), nil }))
 	mux.Handle("POST /api/conversations", handler(a.newConversation))
@@ -217,7 +219,7 @@ func (a *app) newConversation(r *http.Request) (any, error) {
 		return nil, fail(http.StatusBadRequest, "unknown model %q", in.Model)
 	}
 	now := time.Now().UTC()
-	c := &Conversation{ID: newID("c"), Model: in.Model, Created: now, Updated: now, Messages: []chatMsg{}, Results: map[string]Result{}}
+	c := &Conversation{ID: newID("c"), Model: in.Model, Created: now, Updated: now, Messages: []chatapi.Msg{}, Results: map[string]Result{}}
 	if err := a.store.saveConversation(c); err != nil {
 		return nil, err
 	}

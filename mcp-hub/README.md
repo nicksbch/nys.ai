@@ -27,6 +27,7 @@ plug in is under "Contract for an upstream server" there.
 | `config.go`   | Reading and checking `servers.json`                                  |
 | `upstream.go` | One session per upstream server: connecting, tool list, up/down, calls |
 | `hub.go`      | Naming, profiles, forwarding, audit, HTTP endpoints                  |
+| `client/`     | Go package analyst, nexus and foreman import: connecting to the hub, and handing its tools and results to a model |
 | `usage.txt`   | Usage text, served at `GET /` and printed by `mcp-hub help`          |
 | `servers.json` | The server's config: upstream servers and profiles. Deployed as is |
 | `deploy.sh`   | Run on your Mac: builds the binary and installs it on the server     |
