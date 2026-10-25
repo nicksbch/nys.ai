@@ -42,6 +42,8 @@ type engine struct {
 
 	mu     sync.Mutex
 	active map[string]chan struct{} // tasks being run, closed when done
+
+	actMu sync.Mutex // one decision on an action at a time
 }
 
 func newEngine(defs *Defs, st *store, bus *relay.Client, hubURL, hubToken string, concurrency int) *engine {
@@ -71,6 +73,7 @@ func (e *engine) start(ctx context.Context) {
 		log.Printf("task %s: resuming", t.ID)
 		e.goRun(ctx, t.ID, "", "")
 	}
+	e.resumeActions(ctx)
 	for _, tt := range e.defs.Types {
 		if tt.OnTopic != "" {
 			if e.bus == nil {
@@ -94,9 +97,9 @@ func (e *engine) wait() { e.wg.Wait() }
 
 func newTaskID() string { return newRunID() }
 
-func (e *engine) create(tt *TaskType, origin, title, key, input string, eventID uint64) (*Task, error) {
+func (e *engine) create(tt *TaskType, origin, parent, title, key, input string, eventID uint64) (*Task, error) {
 	now := time.Now().UTC()
-	t := &Task{ID: newTaskID(), Type: tt.Name, Title: title, Key: key, Origin: origin, EventID: eventID,
+	t := &Task{ID: newTaskID(), Type: tt.Name, Title: title, Key: key, Origin: origin, Parent: parent, EventID: eventID,
 		Input: input, Status: statusCreated, Created: now, Updated: now, Seen: 1, LastSeen: now, Runs: []*RunInfo{}}
 	if eventID != 0 {
 		t.Events = []uint64{eventID}
@@ -118,7 +121,7 @@ func (e *engine) createUserTask(ctx context.Context, typeName, input string) (*T
 	if strings.TrimSpace(input) == "" {
 		return nil, fmt.Errorf("input is empty")
 	}
-	t, err := e.create(tt, "user", title(tt, firstLine(input, 80)), "", input, 0)
+	t, err := e.create(tt, "user", "", title(tt, firstLine(input, 80)), "", input, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -222,6 +225,19 @@ func (e *engine) handleEvent(ctx context.Context, tt *TaskType, ev relayEvent) b
 		log.Printf("task type %s: event %d is already in task %s", tt.Name, ev.ID, t.ID)
 		return e.waitRunnable(ctx, t.ID)
 	}
+	// An event from the job of an action a task sent: into that task if it is
+	// of this type, open or closed, so an action can't start a loop of runs.
+	origin, parent := "event", ""
+	if p := e.taskOfJob(ev); p != nil {
+		if p.Type == tt.Name {
+			if err := e.store.write(logRecord{Op: "attached", Task: p.ID, Event: ev.ID}); err != nil {
+				log.Printf("task %s: %v", p.ID, err)
+			}
+			log.Printf("task %s (%s): event %d came from its action's job; attached to it", p.ID, tt.Name, ev.ID)
+			return true
+		}
+		origin, parent = "agent", p.ID
+	}
 	key := groupKey(tt, ev)
 	if key != "" {
 		open := e.store.find(func(t *Task) bool { return t.Type == tt.Name && t.Key == key && !closed(t.Status) })
@@ -239,7 +255,7 @@ func (e *engine) handleEvent(ctx context.Context, tt *TaskType, ev relayEvent) b
 	if detail == "" {
 		detail = ev.Topic + " " + ev.Type
 	}
-	t, err := e.create(tt, "event", title(tt, firstLine(detail, 120)), key, "Event:\n"+string(b), ev.ID)
+	t, err := e.create(tt, origin, parent, title(tt, firstLine(detail, 120)), key, "Event:\n"+string(b), ev.ID)
 	if err != nil {
 		log.Printf("task type %s: could not create a task for event %d: %v", tt.Name, ev.ID, err)
 		return e.sleep(ctx, retryFirst) // the event stays unacked and comes back
@@ -344,7 +360,7 @@ func (e *engine) schedule(ctx context.Context, tt *TaskType) {
 			} else {
 				input += " This is the first scheduled task of this type."
 			}
-			t, err := e.create(tt, "schedule", title(tt, now.UTC().Format("2006-01-02 15:04")), "", input, 0)
+			t, err := e.create(tt, "schedule", "", title(tt, now.UTC().Format("2006-01-02 15:04")), "", input, 0)
 			if err != nil {
 				log.Printf("task type %s: %v", tt.Name, err)
 				continue
@@ -491,13 +507,23 @@ func (e *engine) endRun(t *Task, info *RunInfo, res *runResult, end time.Time) {
 	ended := *info
 	ended.Ended, ended.Status, ended.Error = end.UTC(), res.Status, res.Error
 	ended.Steps, ended.Usage, ended.Duration = res.Steps, res.Usage, end.Sub(info.Started).Milliseconds()
-	if err := e.store.write(logRecord{Op: "run_ended", Task: t.ID, Run: &ended, Result: res.Result}); err != nil {
+	// A proposal counts only from a run that finished its work; otherwise it
+	// stays in the transcript alone.
+	var action *proposal
+	if res.Status == "ok" {
+		action = res.Action
+	}
+	if err := e.store.write(logRecord{Op: "run_ended", Task: t.ID, Run: &ended, Result: res.Result, Action: action}); err != nil {
 		log.Printf("task %s: %v", t.ID, err)
 	}
 	// Only real outcomes go to relay: vigil counts "failed" as a failed job,
 	// and a model being down is not the agent failing.
 	if res.Status == "ok" || res.Status == "failed" {
 		e.publish(t.Type, relay.Event{Type: res.Status, RunID: info.ID, Data: e.eventData(t, &ended, res)})
+	}
+	if action != nil {
+		e.publish(t.Type, relay.Event{Type: "action_proposed", RunID: info.ID, Data: e.actionData(t, action.Tool, "", "")})
+		log.Printf("task %s (%s): run %s proposed %s", t.ID, t.Type, info.ID, action.Tool)
 	}
 	log.Printf("task %s (%s): run %s %s after %d steps%s", t.ID, t.Type, info.ID, res.Status, res.Steps, errSuffix(res.Error))
 }

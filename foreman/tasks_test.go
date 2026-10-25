@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -46,11 +47,20 @@ func newFakeRelay(t *testing.T) *fakeRelay {
 			var filt map[string]string
 			json.NewDecoder(r.Body).Decode(&filt)
 			f.filters[strings.TrimPrefix(path, "consumers/")] = filt["topic"] + " " + filt["type"]
+		case r.Method == "GET" && path == "events":
+			q := r.URL.Query()
+			var out []relayEvent
+			for _, e := range f.events {
+				if matches(q.Get("topic")+" "+q.Get("type"), e) && (q.Get("run_id") == "" || q.Get("run_id") == e.RunID) {
+					out = append(out, e)
+				}
+			}
+			json.NewEncoder(w).Encode(map[string]any{"events": out})
 		case r.Method == "GET" && strings.HasSuffix(path, "/next"):
 			name := strings.TrimSuffix(strings.TrimPrefix(path, "consumers/"), "/next")
 			var out []relayEvent
 			for _, e := range f.events {
-				if e.ID > f.cursor[name] {
+				if e.ID > f.cursor[name] && matches(f.filters[name], e) {
 					out = append(out, e)
 					break
 				}
@@ -72,6 +82,15 @@ func newFakeRelay(t *testing.T) *fakeRelay {
 	}))
 	t.Cleanup(f.srv.Close)
 	return f
+}
+
+// matches applies a consumer's filter, "<topics> <types>", as relay does
+// for the forms foreman uses: a topic, a prefix ending in *, or *.
+func matches(filter string, e relayEvent) bool {
+	topic, types, _ := strings.Cut(filter, " ")
+	okTopic := topic == "" || topic == "*" || topic == e.Topic ||
+		(strings.HasSuffix(topic, "*") && strings.HasPrefix(e.Topic, strings.TrimSuffix(topic, "*")))
+	return okTopic && (types == "" || slices.Contains(strings.Split(types, ","), e.Type))
 }
 
 func (f *fakeRelay) add(e relayEvent) {
@@ -102,6 +121,7 @@ func duckEvent(id uint64, pipe string) relayEvent {
 }
 
 type harness struct {
+	hub   *fakeHub
 	e     *engine
 	st    *store
 	relay *fakeRelay
@@ -112,7 +132,11 @@ type harness struct {
 
 func newTestEnv(t *testing.T, model *fakeModel, every time.Duration) *harness {
 	t.Helper()
-	hub := newFakeHub(t)
+	return newTestEnvHub(t, model, every, newFakeHub(t))
+}
+
+func newTestEnvHub(t *testing.T, model *fakeModel, every time.Duration, hub *fakeHub) *harness {
+	t.Helper()
 	rel := newFakeRelay(t)
 	dir := t.TempDir()
 	st, err := openStore(dir)
@@ -130,7 +154,7 @@ func newTestEnv(t *testing.T, model *fakeModel, every time.Duration) *harness {
 	}
 	e := newEngine(defs, st, &relay.Client{URL: rel.srv.URL, HTTP: &http.Client{}}, hub.srv.URL, "hub-token", 2)
 	ctx, cancel := context.WithCancel(context.Background())
-	env := &harness{e: e, st: st, relay: rel, model: model, dir: dir, ctx: ctx}
+	env := &harness{hub: hub, e: e, st: st, relay: rel, model: model, dir: dir, ctx: ctx}
 	t.Cleanup(func() { cancel(); e.wait() })
 	return env
 }
@@ -269,7 +293,7 @@ func TestRestartResumesInterruptedRun(t *testing.T) {
 	env := newTestEnv(t, model, 0)
 	tt := env.e.defs.Types["duckpipe-failure"]
 	tt.OnTopic = "" // no relay trigger in this test
-	tk, err := env.e.create(tt, "user", "x", "", "Look at this.", 0)
+	tk, err := env.e.create(tt, "user", "", "x", "", "Look at this.", 0)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -27,6 +27,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	relay "relay/client"
 )
 
@@ -46,7 +47,8 @@ Commands:
   foreman check
       Validate the files, reach each agent's mcp-hub profile, and test each
       model with one tool call. Exit codes: 0 all good, 1 something is
-      unreachable or a model didn't call the tool, 2 bad files.
+      unreachable or a model didn't call the tool, 2 bad files or an action
+      that isn't in its agent's profile.
 
 Common flags:
   -config DIR   models.json, agents/ and tasks/ (default /etc/foreman)
@@ -209,19 +211,39 @@ func check(ctx context.Context, args []string) int {
 	slices.Sort(models)
 	enc.Encode(map[string]any{"check": "files", "agents": len(defs.Agents), "task_types": len(defs.Types), "models": len(models)})
 
+	listed := map[string]*toolSet{} // by profile, when reachable
 	for _, p := range profiles {
 		spec := runSpec{RunID: "check", Agent: &Agent{Profile: p}, HubURL: c.hub, HubToken: os.Getenv("MCP_HUB_TOKEN")}
 		line := map[string]any{"check": "profile", "name": p}
 		hub, err := connectHub(ctx, spec)
 		if err == nil {
-			var offered []toolDef
-			var withheld []string
-			offered, withheld, err = hubTools(ctx, hub)
+			var ts *toolSet
+			ts, err = hubTools(ctx, hub, nil)
 			hub.Close()
-			line["tools"], line["withheld"] = len(offered), withheld
+			if err == nil {
+				listed[p] = ts
+				line["tools"], line["withheld"] = len(ts.offered), ts.withheld
+			}
 		}
 		if err != nil {
 			line["error"], rc = err.Error(), 1
+		}
+		enc.Encode(line)
+	}
+	types := make([]string, 0, len(defs.Types))
+	for name := range defs.Types {
+		types = append(types, name)
+	}
+	slices.Sort(types)
+	for _, name := range types {
+		tt := defs.Types[name]
+		ts := listed[defs.Agents[tt.Agent].Profile]
+		if len(tt.Actions) == 0 || ts == nil {
+			continue // nothing to check, or the profile is unreachable (reported above)
+		}
+		line := map[string]any{"check": "actions", "task_type": name, "actions": tt.Actions}
+		if err := checkActions(tt, defs.Agents[tt.Agent].Profile, ts.all); err != nil {
+			line["error"], rc = err.Error(), 2
 		}
 		enc.Encode(line)
 	}
@@ -235,6 +257,25 @@ func check(ctx context.Context, args []string) int {
 		enc.Encode(line)
 	}
 	return rc
+}
+
+// checkActions refuses a task type's action that isn't in its agent's
+// profile, is read-only (so not an action), or names a preview that is
+// missing or not read-only.
+func checkActions(tt *TaskType, profile string, tools map[string]*mcp.Tool) error {
+	for _, name := range tt.Actions {
+		t := tools[name]
+		switch {
+		case t == nil:
+			return fmt.Errorf("tasks/%s.md: action %s is not in profile %s", tt.Name, name, profile)
+		case readOnly(t):
+			return fmt.Errorf("tasks/%s.md: action %s is read-only, so it is offered anyway; remove it from actions", tt.Name, name)
+		}
+		if p := previewName(t); p != "" && (tools[p] == nil || !readOnly(tools[p])) {
+			return fmt.Errorf("tasks/%s.md: action %s: its preview %s is missing from profile %s or not read-only", tt.Name, name, p, profile)
+		}
+	}
+	return nil
 }
 
 // testModel asks the model to call a tool once: it shows the endpoint is up

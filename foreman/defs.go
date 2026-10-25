@@ -30,6 +30,7 @@ var (
 	topicFiltRE  = regexp.MustCompile(`^[a-z0-9_*.,-]+$`)
 	eventTypesRE = regexp.MustCompile(`^[A-Za-z0-9_.,-]+$`)
 	groupKeyRE   = regexp.MustCompile(`^(topic|type|run_id|data\.[A-Za-z0-9_]{1,64})$`)
+	hubToolRE    = regexp.MustCompile(`^[a-z0-9-]+__[a-z0-9_]+$`)
 )
 
 type Agent struct {
@@ -50,7 +51,8 @@ type TaskType struct {
 	Every       time.Duration `json:"-"`
 	Agent       string        `json:"agent"`
 	GroupBy     []string      `json:"group_by,omitempty"`
-	Output      []string      `json:"output"` // fields of the result, submitted by the agent
+	Output      []string      `json:"output"`            // fields of the result, submitted by the agent
+	Actions     []string      `json:"actions,omitempty"` // hub tools that aren't read-only, proposed for your approval
 	Prompt      string        `json:"prompt"`
 }
 
@@ -272,7 +274,7 @@ func parseAgent(name string, fm map[string]string, body string) (*Agent, error) 
 }
 
 func parseTaskType(name string, fm map[string]string, body string) (*TaskType, error) {
-	if err := onlyKeys(fm, "description", "on_event", "every", "agent", "group_by", "output"); err != nil {
+	if err := onlyKeys(fm, "description", "on_event", "every", "agent", "group_by", "output", "actions"); err != nil {
 		return nil, err
 	}
 	t := &TaskType{Name: name, Description: fm["description"], Agent: fm["agent"], Prompt: body,
@@ -310,6 +312,18 @@ func parseTaskType(name string, fm map[string]string, body string) (*TaskType, e
 		if slices.Contains(t.Output[:i], f) {
 			return nil, fmt.Errorf("output: %q is listed twice", f)
 		}
+	}
+	for _, a := range strings.Split(fm["actions"], ",") {
+		if a = strings.TrimSpace(a); a == "" {
+			continue
+		}
+		if !hubToolRE.MatchString(a) {
+			return nil, fmt.Errorf("actions: %q must be a hub tool name, e.g. url-to-bucket__download", a)
+		}
+		if slices.Contains(t.Actions, a) {
+			return nil, fmt.Errorf("actions: %q is listed twice", a)
+		}
+		t.Actions = append(t.Actions, a)
 	}
 	if t.Prompt == "" {
 		return nil, fmt.Errorf("the instructions (after the front matter) are empty")

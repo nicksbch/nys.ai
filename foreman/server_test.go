@@ -160,3 +160,34 @@ func toStrings(v any) []string {
 	}
 	return out
 }
+
+func TestAPIAction(t *testing.T) {
+	env := actionEnv(t, "",
+		openAI("", [2]string{"repo__open_pull_request", `{"title":"Add a measure"}`}),
+		openAI("", [2]string{"submit", goodSubmit}))
+	srv := httptest.NewServer(env.e.routes(env.ctx, "admin:pw"))
+	t.Cleanup(srv.Close)
+	c := apiClient{t, srv.URL}
+	tk := proposedTask(t, env)
+
+	if code, out := c.do("GET", "/api/tasks?action=proposed", "", true); code != 200 || out["total"] != 1.0 {
+		t.Errorf("proposed filter: %d %v", code, out)
+	}
+	if code, _ := c.do("POST", "/api/tasks/"+tk.ID+"/action", `{"decision":"approve"}`, false); code != 401 {
+		t.Errorf("without a password: %d", code)
+	}
+	if code, _ := c.do("POST", "/api/tasks/"+tk.ID+"/action", `{"decision":"later"}`, true); code != 400 {
+		t.Errorf("bad decision: %d", code)
+	}
+	code, out := c.do("POST", "/api/tasks/"+tk.ID+"/action", `{"decision":"approve","note":"ok"}`, true)
+	if code != 200 || out["task"] == nil {
+		t.Fatalf("approve: %d %v", code, out)
+	}
+	eventually(t, "done", func() bool { return env.st.get(tk.ID).action().State == actionDone })
+	if code, _ := c.do("POST", "/api/tasks/"+tk.ID+"/action", `{"decision":"approve"}`, true); code != 409 {
+		t.Errorf("approving a done action: %d", code)
+	}
+	if code, _ := c.do("GET", "/api/tasks?action=proposed", "", true); code != 200 {
+		t.Errorf("filter: %d", code)
+	}
+}

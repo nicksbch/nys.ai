@@ -99,6 +99,12 @@ func (e *engine) routes(ctx context.Context, auth string) http.Handler {
 			e.reply(w, r, e.rerun(ctx, r.PathValue("id"), in.Agent, in.Model))
 		}
 	})
+	private("POST /api/tasks/{id}/action", func(w http.ResponseWriter, r *http.Request) {
+		var in struct{ Decision, Note string }
+		if readJSON(w, r, &in) {
+			e.reply(w, r, e.decideAction(ctx, r.PathValue("id"), in.Decision, in.Note))
+		}
+	})
 	private("GET /api/agents", e.apiAgents)
 	private("GET /api/types", e.apiTypes)
 	return mux
@@ -139,8 +145,11 @@ func (e *engine) apiTasks(w http.ResponseWriter, r *http.Request) {
 	if n, err := strconv.Atoi(q.Get("limit")); err == nil && n > 0 {
 		limit = min(n, 1000)
 	}
-	typ, agent, verdict := q.Get("type"), q.Get("agent"), q.Get("verdict")
+	typ, agent, verdict, action := q.Get("type"), q.Get("agent"), q.Get("verdict"), q.Get("action")
 	tasks := e.store.find(func(t *Task) bool {
+		if action != "" && !actionFilter(t, action) {
+			return false
+		}
 		if len(statuses) > 0 && !slices.Contains(statuses, t.Status) {
 			return false
 		}

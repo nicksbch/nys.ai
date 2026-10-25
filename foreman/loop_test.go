@@ -27,7 +27,25 @@ type fakeHub struct {
 	calls  []string
 }
 
-func newFakeHub(t *testing.T) *fakeHub {
+// fakeTool is a tool added to the fake hub for one test.
+type fakeTool struct {
+	tool *mcp.Tool
+	call func(args map[string]any) *mcp.CallToolResult
+}
+
+func (h *fakeHub) count(name string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	n := 0
+	for _, c := range h.calls {
+		if c == name {
+			n++
+		}
+	}
+	return n
+}
+
+func newFakeHub(t *testing.T, extra ...fakeTool) *fakeHub {
 	h := &fakeHub{}
 	s := mcp.NewServer(&mcp.Implementation{Name: "hub", Version: "1"}, nil)
 	ro := &mcp.ToolAnnotations{ReadOnlyHint: true}
@@ -44,6 +62,16 @@ func newFakeHub(t *testing.T) *fakeHub {
 	add("vigil__get_run", ro, func(args json.RawMessage) string { return "run " + string(args) + ": failed 3 times" })
 	add("vigil__big", ro, func(json.RawMessage) string { return strings.Repeat("x", 20000) })
 	add("url-to-bucket__download", nil, func(json.RawMessage) string { return "downloaded" })
+	for _, x := range extra {
+		s.AddTool(x.tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			h.mu.Lock()
+			h.calls = append(h.calls, x.tool.Name)
+			h.mu.Unlock()
+			args := map[string]any{}
+			json.Unmarshal(req.Params.Arguments, &args)
+			return x.call(args), nil
+		})
+	}
 	mh := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return s }, &mcp.StreamableHTTPOptions{Stateless: true})
 	h.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer hub-token" {

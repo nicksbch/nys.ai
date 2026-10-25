@@ -29,12 +29,46 @@ const (
 
 func closed(status string) bool { return status == statusResolved || status == statusDismissed }
 
+// Action states.
+const (
+	actionProposed   = "proposed"   // waiting for you
+	actionCalling    = "calling"    // you approved; the tool is being called
+	actionWaiting    = "waiting"    // a long tool started a job; followed on relay
+	actionDone       = "done"       // the call or its job succeeded
+	actionFailed     = "failed"     // the call or its job failed; can be approved again
+	actionNoReply    = "no_reply"   // the job didn't end within its wait
+	actionRejected   = "rejected"   // you rejected it
+	actionSuperseded = "superseded" // a later run proposed another one
+)
+
+// Action is a call to a tool that changes something, proposed by a run and
+// made only after you approve it.
+type Action struct {
+	Run      string          `json:"run"`   // the run that proposed it, which also identifies it
+	Agent    string          `json:"agent"` // the call goes through this agent's hub profile
+	Tool     string          `json:"tool"`
+	Args     json.RawMessage `json:"args"`
+	Preview  string          `json:"preview,omitempty"`
+	WaitMS   int64           `json:"wait_ms"`
+	State    string          `json:"state"`
+	Note     string          `json:"note,omitempty"` // yours, with the decision
+	Attempts int             `json:"attempts,omitempty"`
+	Result   string          `json:"result,omitempty"`
+	Error    string          `json:"error,omitempty"`
+	JobRunID string          `json:"job_run_id,omitempty"` // a long tool's job on relay
+	JobTopic string          `json:"job_topic,omitempty"`
+	Proposed time.Time       `json:"proposed"`
+	Called   time.Time       `json:"called,omitzero"`
+	Ended    time.Time       `json:"ended,omitzero"`
+}
+
 type Task struct {
 	ID       string            `json:"id"`
 	Type     string            `json:"type"`
 	Title    string            `json:"title"`
 	Key      string            `json:"key,omitempty"`      // grouping key
-	Origin   string            `json:"origin"`             // event, schedule, user (agent: later)
+	Origin   string            `json:"origin"`             // event, schedule, user, agent (an event an action caused)
+	Parent   string            `json:"parent,omitempty"`   // origin agent: the task whose action caused it
 	EventID  uint64            `json:"event_id,omitempty"` // the relay event that created it
 	Input    string            `json:"input"`              // the first user message of every run
 	Status   string            `json:"status"`
@@ -48,6 +82,24 @@ type Task struct {
 	Verdict  string            `json:"verdict,omitempty"`
 	Note     string            `json:"note,omitempty"`
 	Runs     []*RunInfo        `json:"runs"`
+	Actions  []*Action         `json:"actions,omitempty"` // oldest first; the last is the current one
+}
+
+// action is the task's current action, or nil.
+func (t *Task) action() *Action {
+	if len(t.Actions) == 0 {
+		return nil
+	}
+	return t.Actions[len(t.Actions)-1]
+}
+
+func (t *Task) actionOf(run string) *Action {
+	for _, a := range t.Actions {
+		if a.Run == run {
+			return a
+		}
+	}
+	return nil
 }
 
 type RunInfo struct {
@@ -65,16 +117,21 @@ type RunInfo struct {
 
 // logRecord is one line of tasks.jsonl.
 type logRecord struct {
-	T      time.Time         `json:"t"`
-	Op     string            `json:"op"` // created, attached, run_started, run_ended, status, verdict, waiting
-	Task   string            `json:"task"`
-	New    *Task             `json:"new,omitempty"`    // created
-	Event  uint64            `json:"event,omitempty"`  // attached
-	Run    *RunInfo          `json:"run,omitempty"`    // run_started, run_ended
-	Result map[string]string `json:"result,omitempty"` // run_ended
-	Status string            `json:"status,omitempty"` // status
-	Text   string            `json:"text,omitempty"`   // verdict note, waiting reason
-	Value  string            `json:"value,omitempty"`  // verdict
+	T         time.Time         `json:"t"`
+	Op        string            `json:"op"` // created, attached, run_started, run_ended, status, verdict, waiting, action_*
+	Task      string            `json:"task"`
+	New       *Task             `json:"new,omitempty"`        // created
+	Event     uint64            `json:"event,omitempty"`      // attached
+	Run       *RunInfo          `json:"run,omitempty"`        // run_started, run_ended
+	Result    map[string]string `json:"result,omitempty"`     // run_ended
+	Status    string            `json:"status,omitempty"`     // status
+	Text      string            `json:"text,omitempty"`       // verdict note, waiting reason
+	Value     string            `json:"value,omitempty"`      // verdict, action decision, action end state
+	Action    *proposal         `json:"action,omitempty"`     // run_ended: the run's proposal
+	ActionRun string            `json:"action_run,omitempty"` // action_*: the action's run
+	Output    string            `json:"output,omitempty"`     // action_ended: the result
+	JobRun    string            `json:"job_run,omitempty"`    // action_called: a long tool's job
+	JobTopic  string            `json:"job_topic,omitempty"`
 }
 
 type store struct {
@@ -152,6 +209,15 @@ func (s *store) apply(r logRecord) {
 		switch r.Run.Status {
 		case "ok":
 			t.Status, t.Result = statusAnswered, r.Result
+			if p := r.Action; p != nil {
+				for _, a := range t.Actions {
+					if a.State == actionProposed || a.State == actionFailed || a.State == actionNoReply {
+						a.State = actionSuperseded
+					}
+				}
+				t.Actions = append(t.Actions, &Action{Run: r.Run.ID, Agent: r.Run.Agent, Tool: p.Tool, Args: p.Args,
+					Preview: p.Preview, WaitMS: p.WaitMS, State: actionProposed, Proposed: r.T})
+			}
 		case "failed":
 			t.Status = statusFailed
 		default: // unavailable or interrupted: the task waits for another run
@@ -161,6 +227,26 @@ func (s *store) apply(r logRecord) {
 		t.Status = r.Status
 	case "verdict":
 		t.Verdict, t.Note = r.Value, r.Text
+	case "action_decided", "action_called", "action_ended":
+		a := t.actionOf(r.ActionRun)
+		if a == nil {
+			return
+		}
+		switch r.Op {
+		case "action_decided":
+			a.Note = r.Text
+			if a.State = actionRejected; r.Value == "approve" {
+				a.State, a.Attempts, a.Result, a.Error = actionCalling, a.Attempts+1, "", ""
+				a.JobRunID, a.JobTopic, a.Called, a.Ended = "", "", time.Time{}, time.Time{}
+			}
+		case "action_called":
+			a.State, a.JobRunID, a.JobTopic, a.Called = actionWaiting, r.JobRun, r.JobTopic, r.T
+		case "action_ended":
+			a.State, a.Result, a.Error, a.Ended = r.Value, r.Output, r.Text, r.T
+			if a.Called.IsZero() {
+				a.Called = r.T
+			}
+		}
 	}
 }
 
@@ -202,6 +288,13 @@ func copyTask(t *Task) *Task {
 	for i, r := range t.Runs {
 		rc := *r
 		c.Runs[i] = &rc
+	}
+	if t.Actions != nil {
+		c.Actions = make([]*Action, len(t.Actions))
+		for i, a := range t.Actions {
+			ac := *a
+			c.Actions[i] = &ac
+		}
 	}
 	return &c
 }

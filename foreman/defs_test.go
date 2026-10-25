@@ -78,6 +78,10 @@ func TestDefErrors(t *testing.T) {
 	if _, err := loadDefs(writeDefs(t, agent, task), getenv); err != nil {
 		t.Fatalf("valid files: %v", err)
 	}
+	d, err := loadDefs(writeDefs(t, agent, "---\nagent: a\nactions: url-to-bucket__download, repo-semantic__open_pull_request\n---\nDo it."), getenv)
+	if err != nil || strings.Join(d.Types["t"].Actions, ",") != "url-to-bucket__download,repo-semantic__open_pull_request" {
+		t.Errorf("actions: %v, %v", d, err)
+	}
 	for _, tc := range []struct{ agent, task, want string }{
 		{"profile: ops\n---\nx", task, `must start with a "---"`},
 		{"---\nprofile: ops\nmodel: local\nx", task, "no closing"},
@@ -93,6 +97,8 @@ func TestDefErrors(t *testing.T) {
 		{agent, "---\nagent: a\ngroup_by: data\n---\nx", "group_by"},
 		{agent, "---\nagent: a\noutput: Fix\n---\nx", "output"},
 		{agent, "---\nagent: a\noutput: fix fix\n---\nx", "listed twice"},
+		{agent, "---\nagent: a\nactions: download\n---\nx", "must be a hub tool name"},
+		{agent, "---\nagent: a\nactions: a__b, a__b\n---\nx", "listed twice"},
 	} {
 		_, err := loadDefs(writeDefs(t, tc.agent, tc.task), getenv)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {

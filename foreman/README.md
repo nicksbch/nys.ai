@@ -10,8 +10,10 @@ you to review.
 - **Agents** (*who*): a model, an mcp-hub profile, limits and a prompt.
 - **Task types** (*what and when*): a trigger, an agent, instructions and
   the fields of the result.
-- **Read-only:** agents are only given tools marked read-only, so they
-  explain and propose, but don't change anything.
+- **Read-only, or approved by you:** agents are given tools marked
+  read-only. A task type can also list **actions**: tools that change
+  something, which the agent may only propose. The call is made when you
+  approve it on the page.
 - **Local or hosted models:** llama-server (or any chat-completions API),
   and Claude through the Messages API.
 - **Grouping:** a pipe that keeps failing is one task, "seen 5 times", not
@@ -29,7 +31,8 @@ The design and its reasons are in [SPEC.md](SPEC.md).
 | `main.go`     | `serve`, `try` and `check`                                              |
 | `defs.go`     | Agent and task type files, `models.json`                                |
 | `models.go`   | The two model APIs: chat completions and Anthropic's Messages API       |
-| `loop.go`     | One run: tools from mcp-hub, steps, limits, `submit`                    |
+| `loop.go`     | One run: tools from mcp-hub, steps, limits, `submit`, proposed actions  |
+| `actions.go`  | Approving actions, calling them, following long jobs on relay           |
 | `tasks.go`    | Triggers, grouping, the task lifecycle, retries, relay events           |
 | `store.go`    | `tasks.jsonl` and the transcripts, retention                            |
 | `server.go`   | The JSON API and the password                                           |
@@ -134,6 +137,7 @@ every: 24h                      # and/or a schedule (at least 1m)
 agent: oncall
 group_by: topic data.pipe       # optional: one open task per key
 output: explanation fix         # the result's fields (default: answer)
+actions: url-to-bucket__download  # optional: tools the agent may propose
 ---
 The instructions for this kind of task.
 ```
@@ -149,6 +153,32 @@ The instructions for this kind of task.
   runs the tests, which load `config/`, so a broken file is caught before
   anything ships. An agent's profile must exist in
   `../mcp-hub/servers.json`; when you add one, deploy mcp-hub too.
+
+### Actions
+
+An action is a hub tool that isn't read-only, listed in a task type's
+`actions`. The service that does the work owns the tool; foreman never
+calls it during a run.
+
+- When the agent calls it, foreman checks the arguments against the tool's
+  schema and, if the tool names a `preview` in its `_meta` (a read-only tool
+  on the same server), runs that and keeps what it says, such as a diff.
+  The agent is told "Proposed" and carries on. One action per run.
+- Only a run that ends `ok` leaves its proposal on the task, for you to
+  **Approve** or **Reject** in its Action box. Approving calls the tool
+  through mcp-hub, with the proposing run's id.
+- A quick tool's result is the outcome. A long tool returns
+  `{"run_id","topic"}` for the job it started; foreman follows its `ok` or
+  `failed` on relay (consumer `foreman-actions`) for up to its `_meta`
+  `wait` (default 30m), then calls it `no_reply`.
+- A failed call, or `no_reply`, can be approved again. A call cut off by a
+  restart is marked failed, never retried by itself.
+- An event from an action's own job that matches the same task type is
+  attached to that task and starts no run, so an action can't start a loop.
+- `foreman check` fails (exit 2) on an action that isn't in the agent's
+  profile, is read-only, or has a preview that isn't read-only.
+
+Details in [SPEC-actions.md](SPEC-actions.md).
 
 Small local models do much better with few tools and short, explicit
 instructions. Keep profiles narrow, and say in the instructions which tool
@@ -185,12 +215,15 @@ answer with the local model's.
 ## The page
 
 - **Inbox:** tasks waiting for you (answered or failed), and tasks in
-  progress.
+  progress. A task with an action to decide on is marked "action".
 - **Task:**
   - the result's fields,
   - **Resolve** (fixed) or **Dismiss** (doesn't matter),
   - a good or bad verdict with a note,
   - **Run again** with another agent or model,
+  - the **Action**, when a run proposed one: the tool, its arguments, the
+    preview (a diff is colored), **Approve** and **Reject**, and what came
+    back,
   - the runs, each opening to its full transcript.
 - **All tasks:** filter by status, task type and verdict.
 - **Agents & task types:** their settings, counts and prompts, and a
@@ -201,7 +234,9 @@ answer with the local model's.
 Each task type publishes on `foreman.<task type>`:
 - `created` when a task is created,
 - `started`, then `ok` or `failed`, for each run,
-- `resolved` and `dismissed` when you close a task.
+- `resolved` and `dismissed` when you close a task,
+- `action_proposed`, then `action_ok`, `action_failed`, `action_no_reply` or
+  `action_rejected`, with `run_id` the run that proposed it.
 
 `data.task_id` and `data.name` (the title) are always set. `ok` events
 carry `data.result`.

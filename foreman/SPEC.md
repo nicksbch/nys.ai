@@ -412,7 +412,8 @@ Each of these builds on something v1 already has:
    repo MCP server with write tools on the hub, and an **approval** step in
    foreman. A run proposes the action, the task waits in the inbox, and the
    tool call only happens after you approve. The read-only rule becomes
-   "read-only, or approved by you".
+   "read-only, or approved by you". Specced and approved 2026-10-25 in
+   [SPEC-actions.md](SPEC-actions.md).
 3. **More context:** read-only MCP servers for code, configs and logs. They
    are added to the hub, with no change to foreman.
 

@@ -59,6 +59,15 @@ tr.row:hover td { background: color-mix(in srgb, var(--accent) 6%, transparent);
 .s-running, .s-created { color: var(--warning-text); }
 .s-resolved { color: var(--good-text); }
 .s-dismissed, .s-unavailable, .s-interrupted { color: var(--muted); }
+.s-proposed, .s-calling, .s-waiting, .s-no_reply { color: var(--warning-text); }
+.s-done { color: var(--good-text); }
+.s-rejected, .s-superseded { color: var(--muted); }
+.diff .add { color: var(--good-text); }
+.diff .del { color: var(--critical-text); }
+.diff .hunk { color: var(--muted); }
+dl.args { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 12px; margin: 6px 0; font-size: 13px; }
+dl.args dt { color: var(--text-2); }
+dl.args dd { margin: 0; overflow-wrap: anywhere; }
 .v-good { color: var(--good-text); }
 .v-bad { color: var(--critical-text); }
 .empty { color: var(--muted); padding: 8px 0; }
@@ -155,6 +164,74 @@ function preview(t) {
   return last && last.error ? firstLine(last.error) : "";
 }
 
+function currentAction(t) { return t.actions && t.actions.length ? t.actions[t.actions.length - 1] : null; }
+
+// diff colors a unified diff; other text is shown as it is.
+function diff(text) {
+  const lines = String(text || "").split("\n");
+  if (!lines.some(l => l.startsWith("+++ ") || l.startsWith("@@"))) return `<pre>${esc(text)}</pre>`;
+  return `<pre class="diff">${lines.map(l => {
+    const c = l.startsWith("+") && !l.startsWith("+++") ? "add" : l.startsWith("-") && !l.startsWith("---") ? "del" : l.startsWith("@@") ? "hunk" : "";
+    return c ? `<span class="${c}">${esc(l)}</span>` : esc(l);
+  }).join("\n")}</pre>`;
+}
+
+// args shows short arguments inline, and strings with line breaks or
+// anything else as blocks.
+function args(a) {
+  const short = [], long = [];
+  for (const [k, v] of Object.entries(a || {})) {
+    if (typeof v === "string" && !v.includes("\n") && v.length < 200) short.push(`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`);
+    else long.push(`<h3>${esc(k)}</h3><pre>${esc(typeof v === "string" ? v : JSON.stringify(v, null, 2))}</pre>`);
+  }
+  return (short.length ? `<dl class="args">${short.join("")}</dl>` : "") + long.join("");
+}
+
+function linkify(s) {
+  s = String(s || "").trim();
+  return /^https?:\/\/\S+$/.test(s) ? `<a class="link" href="${esc(s)}" target="_blank" rel="noopener">${esc(s)}</a>` : `<div class="result">${esc(s)}</div>`;
+}
+
+// actionBox is the task's current action: what it would call, the preview,
+// your decision, and what came back.
+function actionBox(t) {
+  const a = currentAction(t);
+  if (!a) return "";
+  const isClosed = t.status === "resolved" || t.status === "dismissed";
+  const canApprove = !isClosed && ["proposed", "failed", "no_reply"].includes(a.state);
+  const canReject = !isClosed && a.state === "proposed";
+  const earlier = t.actions.slice(0, -1).reverse();
+  const hint = {
+    proposed: "The agent proposes this call. Nothing has happened yet.",
+    calling: "Calling the tool…",
+    waiting: `The job ${a.job_run_id} on ${a.job_topic} is running; waiting for its ok or failed on relay, up to ${dur(a.wait_ms)}.`,
+    done: "Done.",
+    failed: "It failed. Approve again to call it again.",
+    no_reply: "The job didn't end in time, and may still run. Approve again only if it didn't happen.",
+    rejected: "You rejected it.",
+    superseded: "A later run proposed another action.",
+  }[a.state] || "";
+  return `<section class="card" style="grid-column: 1 / -1">
+    <h2>Action ${pill(a.state)}</h2>
+    <div class="sub"><span class="mono">${esc(a.tool)}</span> · proposed by run <span class="mono">${esc(a.run)}</span> (${esc(a.agent)}) ${esc(ago(a.proposed))}${
+      a.attempts > 1 ? ` · called ${a.attempts} times` : ""}</div>
+    <div class="${a.state === "failed" ? "error-line" : "sub"}" style="margin-top:6px">${esc(hint)}</div>
+    ${args(a.args)}
+    ${a.preview ? `<h3>Preview</h3>${diff(a.preview)}` : ""}
+    ${a.result ? `<h3>Result</h3>${linkify(a.result)}` : ""}
+    ${a.error ? `<div class="error-line">${esc(a.error)}</div>` : ""}
+    ${a.note ? `<div class="sub">Your note: ${esc(a.note)}</div>` : ""}
+    ${canApprove || canReject ? `<textarea id="action-note" placeholder="Note (optional): why you approve or reject it">${esc(state.actionNote || "")}</textarea>
+      <div class="actions">
+        <button class="primary" id="action-approve" ${canApprove ? "" : "disabled"}>${a.state === "proposed" ? "Approve" : "Approve again"}</button>
+        <button id="action-reject" ${canReject ? "" : "disabled"}>Reject</button>
+      </div>` : ""}
+    ${earlier.length ? `<details><summary>Earlier actions (${earlier.length})</summary>${earlier.map(e =>
+      `<div class="sub">${pill(e.state)} <span class="mono">${esc(e.tool)}</span> from run <span class="mono">${esc(e.run)}</span>${
+        e.error ? " · " + esc(e.error) : ""}${e.note ? " · note: " + esc(e.note) : ""}</div>`).join("")}</details>` : ""}
+  </section>`;
+}
+
 // --- task tables -----------------------------------------------------------
 function taskTable(tasks, empty) {
   if (!tasks.length) return `<div class="empty">${esc(empty)}</div>`;
@@ -162,7 +239,7 @@ function taskTable(tasks, empty) {
     <th class="num">Seen</th><th>Updated</th><th>Verdict</th></tr></thead><tbody>` +
     tasks.map(t => `<tr class="row" data-task="${esc(t.id)}">
       <td>${pill(t.status)}</td>
-      <td>${esc(t.title)}<div class="preview">${esc(preview(t))}</div></td>
+      <td>${esc(t.title)}${currentAction(t) && currentAction(t).state === "proposed" ? ` <span class="pill s-proposed">action</span>` : ""}<div class="preview">${esc(preview(t))}</div></td>
       <td class="nowrap">${esc(t.type)}</td>
       <td class="num">${t.seen > 1 ? t.seen + "×" : ""}</td>
       <td class="nowrap" title="${esc(when(t.updated))}">${esc(ago(t.updated))}</td>
@@ -213,7 +290,7 @@ const views = {
   async task(id) {
     const [{ task: t, output }, meta] = await Promise.all([api("/api/tasks/" + encodeURIComponent(id)), state.meta || api("/api/agents")]);
     state.meta = meta;
-    if (state.taskID !== id) { state.taskID = id; state.draft = null; state.open = new Set(); state.transcripts = {}; }
+    if (state.taskID !== id) { state.taskID = id; state.draft = null; state.actionNote = ""; state.open = new Set(); state.transcripts = {}; }
     if (unchanged(t)) {
       for (const rid of state.open) { // a running transcript still grows
         const run = t.runs.find(r => r.id === rid);
@@ -231,7 +308,8 @@ const views = {
       <section class="card">
         <div class="sub"><a class="link" href="#inbox">← Inbox</a></div>
         <h3>${esc(t.title)} ${pill(t.status)} ${verdict(t.verdict)}</h3>
-        <div class="sub">${esc(t.type)} · from ${esc(t.origin)}${t.event_id ? " (relay event " + t.event_id + ")" : ""} ·
+        <div class="sub">${esc(t.type)} · from ${esc(t.origin)}${t.event_id ? " (relay event " + t.event_id + ")" : ""}${
+          t.parent ? ` · caused by the action of <a class="link" href="#task/${esc(t.parent)}">task ${esc(t.parent)}</a>` : ""} ·
           created ${esc(when(t.created))}${t.seen > 1 ? ` · seen ${t.seen} times, last ${esc(ago(t.last_seen))}` : ""}</div>
         ${t.waiting ? `<div class="waiting">Waiting to run: ${esc(t.waiting)}</div>` : ""}
         ${t.status === "failed" && lastRun && lastRun.error ? `<div class="error-line">Last run failed: ${esc(lastRun.error)}</div>` : ""}
@@ -242,6 +320,7 @@ const views = {
           ${t.result ? fields.map(f => `<h3>${esc(label(f))}</h3><div class="result">${esc(t.result[f])}</div>`).join("")
             : `<div class="empty">${busy ? "No result yet: the task is " + esc(t.status) + "." : "No result: no run submitted one."}</div>`}
         </section>
+        ${actionBox(t)}
         <section class="card">
           <h2>Review</h2>
           <div class="actions">
@@ -302,6 +381,15 @@ const views = {
     }));
     view.querySelectorAll("button[data-status]").forEach(b => b.addEventListener("click", () =>
       act(() => api(`/api/tasks/${id}/status`, { status: b.dataset.status }))));
+    if ($("#action-note")) {
+      $("#action-note").addEventListener("input", ev => { state.actionNote = ev.target.value; });
+      const decide = decision => act(async () => {
+        await api(`/api/tasks/${id}/action`, { decision, note: $("#action-note").value });
+        state.actionNote = "";
+      });
+      $("#action-approve").addEventListener("click", () => decide("approve"));
+      $("#action-reject").addEventListener("click", () => decide("reject"));
+    }
     $("#rerun").addEventListener("click", () => act(() =>
       api(`/api/tasks/${id}/run`, { agent: $("#rerun-agent").value, model: $("#rerun-model").value })));
 
@@ -388,6 +476,7 @@ function renderTranscript(recs) {
         return `<div class="step"><div class="step-head">Started ${esc(when(r.t))} · agent ${esc(r.agent)} · model ${esc(r.model)} ·
           profile ${esc(r.profile)}</div>
           <div class="sub">Tools offered: <span class="mono">${esc((r.tools || []).concat("submit").join(", "))}</span>${
+            r.actions && r.actions.length ? ` · actions (proposed for approval): <span class="mono">${esc(r.actions.join(", "))}</span>` : ""}${
             r.withheld && r.withheld.length ? ` · withheld (not read-only): <span class="mono">${esc(r.withheld.join(", "))}</span>` : ""}</div>
           <details><summary>System prompt</summary><pre>${esc(r.system)}</pre></details>
           <details><summary>Input</summary><pre>${esc(r.input)}</pre></details></div>`;
@@ -403,8 +492,10 @@ function renderTranscript(recs) {
         const result = r.result == null ? "" : String(r.result);
         const short = result.length < 600;
         return `<div class="step tool${r.error ? " err" : ""}"><div class="step-head"><span class="mono">${esc(r.name)}</span>${
-          r.duration_ms != null ? " · " + esc(dur(r.duration_ms)) : ""}${r.error ? " · error" : ""}${r.cut ? " · cut to 16 KB for the model" : ""}</div>
+          r.duration_ms != null ? " · " + esc(dur(r.duration_ms)) : ""}${r.error ? " · error" : ""}${r.proposed ? " · proposed, not called" : ""}${
+          r.cut ? " · cut to 16 KB for the model" : ""}</div>
           <pre>${esc(pretty(r.args))}</pre>
+          ${r.preview ? `<details><summary>Preview</summary>${diff(r.preview)}</details>` : ""}
           ${result ? `<details${short ? " open" : ""}><summary>Result (${num(result.length)} characters)</summary><pre>${esc(pretty(result))}</pre></details>` : ""}</div>`;
       }
       case "end":

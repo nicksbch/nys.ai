@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -20,6 +21,11 @@ const (
 	maxToolText  = 16 << 10 // longest tool result the model sees
 	submitTool   = "submit"
 	reminderText = "Call the submit tool with your result."
+
+	defaultActionWait = 30 * time.Minute
+	maxActionWait     = 24 * time.Hour
+	actionNote        = "\n\nCalling this proposes the action. It doesn't run now. It runs only if a person approves it."
+	proposedText      = "Proposed. It will run after approval. Continue, then call submit."
 )
 
 // runSpec is everything one run needs.
@@ -40,6 +46,16 @@ type runResult struct {
 	Error  string            `json:"error,omitempty"`
 	Steps  int               `json:"steps"`
 	Usage  usage             `json:"usage"`
+	Action *proposal         `json:"action,omitempty"` // kept for the task only if the run ends ok
+}
+
+// proposal is an action a run proposed: a call to a tool that changes
+// something, made only after you approve it.
+type proposal struct {
+	Tool    string          `json:"tool"`
+	Args    json.RawMessage `json:"args"`
+	Preview string          `json:"preview,omitempty"` // what the preview tool said
+	WaitMS  int64           `json:"wait_ms"`           // how long a long job may take
 }
 
 // recorder receives the transcript, one record at a time.
@@ -58,26 +74,31 @@ func run(ctx context.Context, spec runSpec, rec recorder) (*runResult, error) {
 		return nil, fmt.Errorf("%w: mcp-hub: %v", errUnavailable, err)
 	}
 	defer hub.Close()
-	offered, withheld, err := hubTools(ctx, hub)
+	ts, err := hubTools(ctx, hub, spec.Type.Actions)
 	if err != nil {
 		return nil, fmt.Errorf("%w: mcp-hub: %v", errUnavailable, err)
 	}
-	tools := append(offered, submitDef(spec.Type.Output))
+	offered := ts.offered
+	tools := append(append([]toolDef{}, offered...), submitDef(spec.Type.Output))
 	system := spec.Agent.Prompt + "\n\n" + spec.Type.Prompt + "\n\n" +
 		"When you are done, call the submit tool with your result. Calling it ends your work on this task."
 
-	names := make([]string, len(offered))
-	for i, t := range offered {
-		names[i] = t.Name
+	var names, actions []string
+	for _, t := range offered {
+		if ts.actions[t.Name] != nil {
+			actions = append(actions, t.Name)
+		} else {
+			names = append(names, t.Name)
+		}
 	}
 	rec("start", map[string]any{"run_id": spec.RunID, "agent": spec.Agent.Name, "task_type": spec.Type.Name,
-		"model": spec.ModelKey, "profile": spec.Agent.Profile, "tools": names, "withheld": withheld,
-		"system": system, "input": spec.Input})
+		"model": spec.ModelKey, "profile": spec.Agent.Profile, "tools": names, "actions": actions,
+		"withheld": ts.withheld, "system": system, "input": spec.Input})
 
 	res := &runResult{}
 	end := func(status, errText string) (*runResult, error) {
 		res.Status, res.Error = status, errText
-		rec("end", map[string]any{"status": status, "result": res.Result, "error": errText,
+		rec("end", map[string]any{"status": status, "result": res.Result, "action": res.Action, "error": errText,
 			"steps": res.Steps, "usage": res.Usage, "duration_ms": time.Since(start).Milliseconds()})
 		return res, nil
 	}
@@ -132,6 +153,10 @@ func run(ctx context.Context, spec runSpec, rec recorder) (*runResult, error) {
 				rec("tool", map[string]any{"step": res.Steps, "name": c.Name, "args": c.Args, "error": true, "result": err.Error()})
 				continue
 			}
+			if t := ts.actions[c.Name]; t != nil {
+				results = append(results, propose(ctx, hub, ts, t, c, res, rec))
+				continue
+			}
 			results = append(results, callTool(ctx, hub, c, names, res.Steps, rec))
 		}
 		if ctx.Err() != nil {
@@ -168,24 +193,138 @@ func connectHub(ctx context.Context, spec runSpec) (*mcp.ClientSession, error) {
 		HTTPClient: &http.Client{Transport: runIDTransport{spec.HubToken, spec.RunID}}}, nil)
 }
 
-// hubTools lists the profile's tools. Only read-only ones are offered in v1;
-// the names of the others are returned as withheld.
-func hubTools(ctx context.Context, hub *mcp.ClientSession) (offered []toolDef, withheld []string, err error) {
-	withheld = []string{}
+// toolSet is what a run gets of its profile's tools.
+type toolSet struct {
+	offered  []toolDef            // read-only tools, and the task type's actions
+	actions  map[string]*mcp.Tool // offered, but only proposed when called
+	withheld []string             // neither: not read-only and not an action
+	all      map[string]*mcp.Tool // every tool of the profile, by name
+}
+
+// hubTools lists the profile's tools. Read-only ones are offered; tools that
+// change something are offered only when the task type lists them in
+// actions, and calling them proposes the call. The others are withheld.
+func hubTools(ctx context.Context, hub *mcp.ClientSession, actions []string) (*toolSet, error) {
+	ts := &toolSet{actions: map[string]*mcp.Tool{}, withheld: []string{}, all: map[string]*mcp.Tool{}}
 	for t, err := range hub.Tools(ctx, nil) {
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-		if t.Annotations == nil || !t.Annotations.ReadOnlyHint {
-			withheld = append(withheld, t.Name)
-			continue
-		}
+		ts.all[t.Name] = t
 		var schema map[string]any
 		b, _ := json.Marshal(t.InputSchema)
 		json.Unmarshal(b, &schema)
-		offered = append(offered, toolDef{Name: t.Name, Description: t.Description, Schema: schema})
+		switch {
+		case readOnly(t):
+			ts.offered = append(ts.offered, toolDef{Name: t.Name, Description: t.Description, Schema: schema})
+		case slices.Contains(actions, t.Name):
+			ts.actions[t.Name] = t
+			ts.offered = append(ts.offered, toolDef{Name: t.Name, Description: t.Description + actionNote, Schema: schema})
+		default:
+			ts.withheld = append(ts.withheld, t.Name)
+		}
 	}
-	return offered, withheld, nil
+	return ts, nil
+}
+
+func readOnly(t *mcp.Tool) bool { return t.Annotations != nil && t.Annotations.ReadOnlyHint }
+
+// previewName is the hub name of a tool's preview: a read-only tool on the
+// same server, named in its _meta, that checks the same arguments without
+// acting. "" when it has none.
+func previewName(t *mcp.Tool) string {
+	p, _ := t.Meta["preview"].(string)
+	server, _, ok := strings.Cut(t.Name, "__")
+	if p == "" || !ok {
+		return ""
+	}
+	return server + "__" + p
+}
+
+// actionWait is how long foreman follows a long tool's job on relay: its
+// _meta wait, or the default.
+func actionWait(t *mcp.Tool) time.Duration {
+	if s, _ := t.Meta["wait"].(string); s != "" {
+		if d, err := time.ParseDuration(s); err == nil && d > 0 {
+			return min(d, maxActionWait)
+		}
+	}
+	return defaultActionWait
+}
+
+// propose handles a call to an action tool: the call isn't made, but checked
+// and stored as the run's proposal. Errors go back to the model to correct.
+func propose(ctx context.Context, hub *mcp.ClientSession, ts *toolSet, t *mcp.Tool, c toolCall, res *runResult, rec recorder) toolResult {
+	start := time.Now()
+	out := toolResult{ID: c.ID, Text: proposedText}
+	p, err := checkProposal(ctx, hub, ts, t, c.Args, res.Action != nil)
+	if err != nil {
+		out.Text, out.IsError = err.Error(), true
+	} else {
+		res.Action = p
+	}
+	r := map[string]any{"step": res.Steps, "name": c.Name, "args": c.Args, "result": out.Text, "error": out.IsError,
+		"proposed": !out.IsError, "duration_ms": time.Since(start).Milliseconds()}
+	if p != nil && p.Preview != "" {
+		r["preview"] = p.Preview
+	}
+	rec("tool", r)
+	return out
+}
+
+func checkProposal(ctx context.Context, hub *mcp.ClientSession, ts *toolSet, t *mcp.Tool, raw json.RawMessage, already bool) (*proposal, error) {
+	if already {
+		return nil, errors.New("this run already proposed an action; a run proposes at most one")
+	}
+	args := map[string]any{}
+	if len(raw) > 0 && json.Unmarshal(raw, &args) != nil {
+		return nil, errors.New("the arguments are not a valid JSON object")
+	}
+	if err := validateArgs(t.InputSchema, args); err != nil {
+		return nil, fmt.Errorf("the arguments don't fit %s's input schema: %v", t.Name, err)
+	}
+	b, _ := json.Marshal(args)
+	p := &proposal{Tool: t.Name, Args: b, WaitMS: actionWait(t).Milliseconds()}
+	name := previewName(t)
+	if name == "" {
+		return p, nil
+	}
+	pt := ts.all[name]
+	switch {
+	case pt == nil:
+		return nil, fmt.Errorf("can't propose %s: its preview tool %s is not in this profile", t.Name, name)
+	case !readOnly(pt):
+		return nil, fmt.Errorf("can't propose %s: its preview tool %s isn't read-only", t.Name, name)
+	}
+	r, err := hub.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
+	if err != nil {
+		return nil, fmt.Errorf("the check before proposing (%s) could not run: %v", name, err)
+	}
+	if r.IsError {
+		return nil, fmt.Errorf("the check before proposing (%s) failed, so nothing was proposed: %s", name, resultText(r))
+	}
+	p.Preview = resultText(r)
+	return p, nil
+}
+
+// validateArgs checks arguments against a tool's input schema.
+func validateArgs(schema any, args map[string]any) error {
+	if schema == nil {
+		return nil
+	}
+	b, err := json.Marshal(schema)
+	if err != nil {
+		return err
+	}
+	var s jsonschema.Schema
+	if err := json.Unmarshal(b, &s); err != nil {
+		return fmt.Errorf("the tool's schema can't be read: %v", err)
+	}
+	rs, err := s.Resolve(nil)
+	if err != nil {
+		return fmt.Errorf("the tool's schema can't be used: %v", err)
+	}
+	return rs.Validate(args)
 }
 
 func callTool(ctx context.Context, hub *mcp.ClientSession, c toolCall, offered []string, step int, rec recorder) toolResult {
