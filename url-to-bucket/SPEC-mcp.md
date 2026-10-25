@@ -34,6 +34,19 @@ approve it.
   prefix, at most 200, with `truncated` when there are more. A prefix
   without a trailing `/` is taken as a folder. A model uses it to find
   where similar files already are before choosing a key.
+- **`suggest_key`** (read-only, added 2026-10-25 for nexus): `{"bucket",
+  "url"}` → where the file belongs. It reads the bucket's keys (at most
+  20,000) and finds the folders holding files named like the URL's file:
+  the same name with every digit as `#` (`2023-08.zip` is `####-##.zip`),
+  or failing that the same extension. Up to 5 suggestions, most matches
+  first, each with the full key to download to, up to 3 examples, and
+  whether a file is already at that key. None means nothing similar is
+  there. The walking that `list_objects` leaves to the model was too much
+  for the small local model, which stopped one level down; this is plain
+  matching, so the same URL always gets the same answer.
+- **`download`'s description** spells out the key: a full key, or a
+  folder ending with `/` (the file keeps its name), never the file's name
+  followed by `/`.
 
 ## Serving
 

@@ -57,6 +57,13 @@ func mcpServer(t *testing.T) (*publishedRelay, *httptest.Server) {
 	// S3 answers ListBuckets, and ListObjectsV2 for home/uk/crime/.
 	fakeS3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/xml")
+		if r.URL.Query().Get("list-type") == "2" && r.URL.Query().Get("delimiter") == "" {
+			io.WriteString(w, `<ListBucketResult><Name>home</Name><IsTruncated>false</IsTruncated>`+
+				`<Contents><Key>uk/crime/2026-08.zip</Key><Size>1733535664</Size><LastModified>2026-10-23T07:50:54Z</LastModified></Contents>`+
+				`<Contents><Key>uk/price-paid/pp-2025.csv</Key><Size>10</Size><LastModified>2026-10-20T07:50:54Z</LastModified></Contents>`+
+				`</ListBucketResult>`)
+			return
+		}
 		if r.URL.Query().Get("list-type") == "2" {
 			if r.URL.Path != "/home" || r.URL.Query().Get("prefix") != "uk/crime/" || r.URL.Query().Get("delimiter") != "/" {
 				http.Error(w, "unexpected listing "+r.URL.String(), 400)
@@ -94,14 +101,14 @@ func TestMCPDownload(t *testing.T) {
 	defer s.Close()
 
 	tools, err := s.ListTools(context.Background(), nil)
-	if err != nil || len(tools.Tools) != 3 {
+	if err != nil || len(tools.Tools) != 4 {
 		t.Fatalf("tools = %v, %v", tools, err)
 	}
 	var tool *mcp.Tool
 	for _, x := range tools.Tools {
 		if x.Name == "download" {
 			tool = x
-		} else if (x.Name != "list_buckets" && x.Name != "list_objects") || x.Annotations == nil || !x.Annotations.ReadOnlyHint {
+		} else if (x.Name != "list_buckets" && x.Name != "list_objects" && x.Name != "suggest_key") || x.Annotations == nil || !x.Annotations.ReadOnlyHint {
 			t.Errorf("tool = %+v", x)
 		}
 	}
@@ -150,6 +157,18 @@ func TestMCPDownload(t *testing.T) {
 	res, _ = s.CallTool(context.Background(), &mcp.CallToolParams{Name: "list_objects", Arguments: map[string]any{"bucket": ""}})
 	if res == nil || !res.IsError {
 		t.Errorf("list_objects without a bucket: %+v", res)
+	}
+
+	res, err = s.CallTool(context.Background(), &mcp.CallToolParams{Name: "suggest_key",
+		Arguments: map[string]any{"bucket": "home", "url": "https://data.police.uk/data/archive/2023-08.zip"}})
+	if err != nil || res.IsError {
+		t.Fatalf("suggest_key = %+v, %v", res, err)
+	}
+	var sug suggestOut
+	b, _ = json.Marshal(res.StructuredContent)
+	json.Unmarshal(b, &sug)
+	if sug.File != "2023-08.zip" || sug.Scanned != 2 || len(sug.Suggestions) != 1 || sug.Suggestions[0].Key != "uk/crime/2023-08.zip" {
+		t.Errorf("suggest_key = %s", b)
 	}
 
 	// A request the page would refuse is a tool error, and nothing is published.

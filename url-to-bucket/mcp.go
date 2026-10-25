@@ -3,8 +3,9 @@ package main
 // The MCP tools at /mcp, so an agent can ask for a download through mcp-hub
 // (url-to-bucket__download). download publishes the same "requested" event
 // as the page and returns the run's ID at once; the download reports on
-// relay as any other. list_buckets and list_objects say where downloads
-// can go and what is already there. See SPEC-mcp.md.
+// relay as any other. list_buckets, list_objects and suggest_key say where
+// downloads can go, what is already there, and where a new one belongs.
+// See SPEC-mcp.md.
 
 import (
 	"context"
@@ -50,6 +51,19 @@ type objectsIn struct {
 	Prefix string `json:"prefix,omitempty" jsonschema:"the folder to list, e.g. uk/crime/; empty for the top of the bucket"`
 }
 
+type suggestIn struct {
+	Bucket string `json:"bucket" jsonschema:"the bucket the file will go to"`
+	URL    string `json:"url" jsonschema:"the URL to download"`
+}
+
+type suggestOut struct {
+	File        string       `json:"file"`    // the file's own name, from the URL
+	Pattern     string       `json:"pattern"` // its name with digits as #
+	Suggestions []suggestion `json:"suggestions"`
+	Scanned     int          `json:"scanned"`
+	Truncated   bool         `json:"truncated"` // the bucket has more than maxScanned objects; only those were looked at
+}
+
 type object struct {
 	Key      string    `json:"key"`
 	Size     int64     `json:"size"`
@@ -72,8 +86,10 @@ type downloadOut struct {
 func (u *ui) mcpHandler() http.Handler {
 	s := mcp.NewServer(&mcp.Implementation{Name: "url-to-bucket", Version: "1"}, nil)
 	mcp.AddTool(s, &mcp.Tool{Name: "download",
-		Description: "Download a URL into a bucket. It returns at once with the run's run_id; the download " +
-			"then reports started, and ok or failed, on relay topic " + topic + " with that run_id. " +
+		Description: "Download a URL into a bucket. key is either the full object key (e.g. uk/crime/2023-08.zip) " +
+			"or a folder ending with / (e.g. uk/crime/), and then the file keeps its own name; empty puts it at the top " +
+			"of the bucket. Never end a key with the file's name followed by /. It returns at once with the run's " +
+			"run_id; the download then reports started, and ok or failed, on relay topic " + topic + " with that run_id. " +
 			"Don't retry a URL that failed with a 4xx; it will fail the same way.",
 		Meta: mcp.Meta{"wait": "2h"}}, u.toolDownload)
 	mcp.AddTool(s, &mcp.Tool{Name: "list_buckets", Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
@@ -82,6 +98,11 @@ func (u *ui) mcpHandler() http.Handler {
 		Description: "One level of a bucket, like ls: the folders and the files (key, size, last modified) directly under " +
 			"prefix. Start with an empty prefix and go down folder by folder, to see where files like the one you " +
 			"want to download already are."}, u.toolObjects)
+	mcp.AddTool(s, &mcp.Tool{Name: "suggest_key", Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+		Description: "Where a download belongs: the folders that already hold files named like the URL's file " +
+			"(same extension, digits in the same places), best first, each with the full key to download to and " +
+			"examples of what is there. Use the first suggestion's key for download. No suggestions means nothing " +
+			"similar is in the bucket: ask the person where to put it."}, u.toolSuggest)
 	return mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return s },
 		&mcp.StreamableHTTPOptions{Stateless: true})
 }
@@ -116,6 +137,28 @@ func (u *ui) toolObjects(ctx context.Context, req *mcp.CallToolRequest, in objec
 			out.Files = append(out.Files, object{Key: key, Size: aws.ToInt64(o.Size), Modified: aws.ToTime(o.LastModified)})
 		}
 	}
+	return nil, out, nil
+}
+
+func (u *ui) toolSuggest(ctx context.Context, req *mcp.CallToolRequest, in suggestIn) (*mcp.CallToolResult, suggestOut, error) {
+	if in.Bucket == "" {
+		return nil, suggestOut{}, errors.New("bucket is required")
+	}
+	file := defaultKey(in.URL)
+	out := suggestOut{File: file, Pattern: shape(file)}
+	var objs []object
+	p := s3.NewListObjectsV2Paginator(u.s3, &s3.ListObjectsV2Input{Bucket: aws.String(in.Bucket)})
+	for p.HasMorePages() && len(objs) < maxScanned {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return nil, suggestOut{}, err
+		}
+		for _, o := range page.Contents {
+			objs = append(objs, object{Key: aws.ToString(o.Key), Size: aws.ToInt64(o.Size), Modified: aws.ToTime(o.LastModified)})
+		}
+	}
+	out.Scanned, out.Truncated = len(objs), p.HasMorePages()
+	out.Suggestions = suggest(objs, file)
 	return nil, out, nil
 }
 
