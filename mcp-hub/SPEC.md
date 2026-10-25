@@ -46,12 +46,22 @@ server follows, so it is kept short:
    download, an ingestion) returns a `run_id` right away and publishes its
    progress to relay. The agent then calls `relay__wait` with that
    `run_id`. No tool call should take longer than the hub's call timeout
-   (60 s by default).
+   (60 s by default). Such a tool returns structured content
+   `{"run_id": "…", "topic": "…"}`, and the job ends with `ok` or `failed`
+   on that topic and run id. (Added 2026-10-25 with
+   [foreman actions](../foreman/SPEC-actions.md).)
 6. **Errors the agent should see** (bad input, job failed) are returned as
    a tool result with `isError: true` and a plain-text explanation, not as
    protocol errors.
 7. **Optional:** send `notifications/tools/list_changed` when the tool list
    changes. The hub re-reads it on a timer anyway.
+8. **Tools that change something** are not annotated `readOnlyHint`, and
+   check every call themselves: any hub client can call them. They may
+   declare, in `_meta`, `preview` (a read-only tool on the same server that
+   checks the same arguments without acting) and, for a long tool, `wait`
+   (how long the job may take). foreman reads these to propose, check and
+   follow an action. (Added 2026-10-25 with
+   [foreman actions](../foreman/SPEC-actions.md).)
 
 The official Go SDK (`github.com/modelcontextprotocol/go-sdk`) covers
 points 1, 6 and 7 with `mcp.NewServer` and `mcp.NewStreamableHTTPHandler`.
