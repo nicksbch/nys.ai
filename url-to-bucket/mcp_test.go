@@ -54,9 +54,20 @@ func mcpServer(t *testing.T) (*publishedRelay, *httptest.Server) {
 	rel := &publishedRelay{}
 	rs := httptest.NewServer(rel.handler())
 	t.Cleanup(rs.Close)
-	// S3 answers ListBuckets only.
+	// S3 answers ListBuckets, and ListObjectsV2 for home/uk/crime/.
 	fakeS3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/xml")
+		if r.URL.Query().Get("list-type") == "2" {
+			if r.URL.Path != "/home" || r.URL.Query().Get("prefix") != "uk/crime/" || r.URL.Query().Get("delimiter") != "/" {
+				http.Error(w, "unexpected listing "+r.URL.String(), 400)
+				return
+			}
+			io.WriteString(w, `<ListBucketResult><Name>home</Name><Prefix>uk/crime/</Prefix><IsTruncated>false</IsTruncated>`+
+				`<Contents><Key>uk/crime/</Key><Size>0</Size><LastModified>2026-10-23T07:50:54Z</LastModified></Contents>`+
+				`<Contents><Key>uk/crime/2026-08.zip</Key><Size>1733535664</Size><LastModified>2026-10-23T07:50:54Z</LastModified></Contents>`+
+				`<CommonPrefixes><Prefix>uk/crime/extracted/</Prefix></CommonPrefixes></ListBucketResult>`)
+			return
+		}
 		io.WriteString(w, `<ListAllMyBucketsResult><Buckets><Bucket><Name>home</Name></Bucket><Bucket><Name>isos</Name></Bucket></Buckets></ListAllMyBucketsResult>`)
 	}))
 	t.Cleanup(fakeS3.Close)
@@ -83,14 +94,14 @@ func TestMCPDownload(t *testing.T) {
 	defer s.Close()
 
 	tools, err := s.ListTools(context.Background(), nil)
-	if err != nil || len(tools.Tools) != 2 {
+	if err != nil || len(tools.Tools) != 3 {
 		t.Fatalf("tools = %v, %v", tools, err)
 	}
 	var tool *mcp.Tool
 	for _, x := range tools.Tools {
 		if x.Name == "download" {
 			tool = x
-		} else if x.Name != "list_buckets" || x.Annotations == nil || !x.Annotations.ReadOnlyHint {
+		} else if (x.Name != "list_buckets" && x.Name != "list_objects") || x.Annotations == nil || !x.Annotations.ReadOnlyHint {
 			t.Errorf("tool = %+v", x)
 		}
 	}
@@ -121,6 +132,24 @@ func TestMCPDownload(t *testing.T) {
 	}
 	if b, _ := json.Marshal(res.StructuredContent); string(b) != `{"buckets":["home","isos"]}` {
 		t.Errorf("list_buckets = %s", b)
+	}
+
+	// One level, as a folder even without the slash; the folder marker isn't a file.
+	res, err = s.CallTool(context.Background(), &mcp.CallToolParams{Name: "list_objects",
+		Arguments: map[string]any{"bucket": "home", "prefix": "uk/crime"}})
+	if err != nil || res.IsError {
+		t.Fatalf("list_objects = %+v, %v", res, err)
+	}
+	var objs objectsOut
+	b, _ = json.Marshal(res.StructuredContent)
+	json.Unmarshal(b, &objs)
+	if objs.Prefix != "uk/crime/" || len(objs.Folders) != 1 || objs.Folders[0] != "uk/crime/extracted/" ||
+		len(objs.Files) != 1 || objs.Files[0].Key != "uk/crime/2026-08.zip" || objs.Files[0].Size != 1733535664 {
+		t.Errorf("list_objects = %s", b)
+	}
+	res, _ = s.CallTool(context.Background(), &mcp.CallToolParams{Name: "list_objects", Arguments: map[string]any{"bucket": ""}})
+	if res == nil || !res.IsError {
+		t.Errorf("list_objects without a bucket: %+v", res)
 	}
 
 	// A request the page would refuse is a tool error, and nothing is published.

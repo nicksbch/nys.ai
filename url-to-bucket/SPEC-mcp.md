@@ -28,6 +28,12 @@ approve it.
   [nexus](../nexus/SPEC.md)): `{}` → `{"buckets": [...]}`, the buckets the
   service's key can see, as the page's bucket list shows. A model then
   doesn't have to guess bucket names.
+- **`list_objects`** (read-only, added 2026-10-25 for nexus):
+  `{"bucket", "prefix"?}` → one level of the bucket, like `ls`: the
+  folders and the files (key, size, last modified) directly under the
+  prefix, at most 200, with `truncated` when there are more. A prefix
+  without a trailing `/` is taken as a folder. A model uses it to find
+  where similar files already are before choosing a key.
 
 ## Serving
 
