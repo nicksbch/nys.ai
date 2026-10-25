@@ -42,6 +42,12 @@ their results back, until it answers in text, within `-max-steps` and
   correct, and never reaches a card.
 - A turn can propose several calls ("get these three URLs"): each is its
   own card.
+- **Corrections by reply** (added 2026-10-25): you reply with another
+  folder or key, and the model proposes again. A new proposal replaces the
+  conversation's earlier cards that haven't run (`proposed` or `failed`)
+  for the same tool and the same URLs in the arguments; they become
+  `superseded` and can't be started. Cards with no URL argument are never
+  replaced.
 
 ## The card
 
@@ -53,6 +59,7 @@ their results back, until it answers in text, within `-max-steps` and
 | `done`     | the call or the job succeeded; its result (for a download: `s3://bucket/key`, size, time) |
 | `failed`   | the call or the job failed, with the error; **Start again** |
 | `cancelled`| you pressed **Cancel** |
+| `superseded` | a later proposal for the same URL replaced it (added 2026-10-25) |
 
 - **Start** calls the tool through the hub, once (the state moves to
   `calling` under a lock first), with `X-Run-Id` set to the conversation's
@@ -87,6 +94,10 @@ bucket isn't clear rather than guess.
 
 - **mcp-hub `servers.json`:** a profile `nexus` with url-to-bucket's
   `download` and `list_buckets`.
+- **url-to-bucket:** a read-only tool `suggest_key` (added 2026-10-25):
+  the folders already holding files named like the URL's file, with the
+  full key to use. The small local model stopped one level into
+  `list_objects`, so the matching is done by url-to-bucket instead.
 - **url-to-bucket:** a read-only tool `list_objects` (added 2026-10-25),
   one level of a bucket like `ls`, so the model can find where similar
   files already are before choosing a key: without it, a download with no

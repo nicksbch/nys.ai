@@ -7,9 +7,15 @@ then follows the download until it ends, and the model is told how it went,
 so "did it work?" and "now the arm64 one" work as follow-ups.
 
 - **What it can do** is exactly the tools of mcp-hub's `nexus` profile:
-  today url-to-bucket's `download`, plus `list_buckets` and `list_objects`
-  so the model can see the buckets and their folders, and put a file next
-  to similar ones instead of guessing. A new capability is a tool added to that profile.
+  today url-to-bucket's `download`, plus `list_buckets`, `list_objects`
+  and `suggest_key`, which finds the folders already holding files named
+  like the one to download (`2023-08.zip` next to `uk/crime/2026-08.zip`)
+  and hands the model the full key, so the card shows exactly where the
+  file will go.
+- **Corrections by reply:** if the key is wrong, or there was nothing to
+  suggest and the model asked, reply with a folder or key. The model
+  proposes again, and the new card replaces the earlier one for the same
+  URL (shown as `superseded`), so there is one card to start. A new capability is a tool added to that profile.
 - **Read-only tools run right away.** A tool that changes something is only
   proposed: its arguments are checked against the tool's schema, and it
   becomes a card with **Start** and **Cancel**. **Start** calls it once,

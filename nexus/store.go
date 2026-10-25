@@ -39,12 +39,13 @@ type Result struct {
 
 // Card states.
 const (
-	cardProposed  = "proposed"  // waiting for you
-	cardCalling   = "calling"   // you pressed Start; the tool is being called
-	cardRunning   = "running"   // a long tool started a job; followed on relay
-	cardDone      = "done"      // the call or its job succeeded
-	cardFailed    = "failed"    // the call or its job failed; can be started again
-	cardCancelled = "cancelled" // you pressed Cancel
+	cardProposed   = "proposed"   // waiting for you
+	cardCalling    = "calling"    // you pressed Start; the tool is being called
+	cardRunning    = "running"    // a long tool started a job; followed on relay
+	cardDone       = "done"       // the call or its job succeeded
+	cardFailed     = "failed"     // the call or its job failed; can be started again
+	cardCancelled  = "cancelled"  // you pressed Cancel
+	cardSuperseded = "superseded" // a later proposal for the same URL replaced it
 )
 
 // Card is a call to a tool that changes something: proposed by the model,

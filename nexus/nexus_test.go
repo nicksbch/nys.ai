@@ -522,3 +522,51 @@ func TestConfig(t *testing.T) {
 		t.Fatalf("config/: %v", err)
 	}
 }
+
+func TestReplyReplacesTheProposal(t *testing.T) {
+	e := newEnv(t,
+		toolCallResp("url-to-bucket__download", `{"url":"https://x.org/a.zip","bucket":"home","key":"uk/crime/a.zip"}`),
+		textResp("It will go next to uk/crime/2026-08.zip. Reply with another folder to change it."),
+		toolCallResp("url-to-bucket__download", `{"url":"https://x.org/a.zip","bucket":"home","key":"uk/crime/2023/"}`),
+		textResp("Changed: uk/crime/2023/."),
+		toolCallResp("url-to-bucket__download", `{"url":"https://x.org/b.zip","bucket":"home","key":"uk/crime/2023/"}`),
+		textResp("And b.zip too."))
+	conv := e.newConv(t)
+	first := e.ask(t, conv, "get https://x.org/a.zip")[0].Card
+	evs := e.ask(t, conv, "put it in uk/crime/2023")
+	// The replaced card comes first, updated, then the new one.
+	if types(evs) != "card,card,text,done" || evs[0].Card.ID != first.ID || evs[0].Card.State != cardSuperseded ||
+		evs[1].Card.State != cardProposed || !strings.Contains(string(evs[1].Card.Args), "uk/crime/2023/") {
+		t.Fatalf("events = %+v", evs)
+	}
+	if code := e.do(t, "POST", "/api/conversations/"+conv+"/cards/"+first.ID+"/start", "", nil); code != http.StatusConflict {
+		t.Errorf("start a replaced card: %d", code)
+	}
+	// Another URL is another download: nothing is replaced.
+	evs = e.ask(t, conv, "and https://x.org/b.zip")
+	if types(evs) != "card,text,done" {
+		t.Fatalf("events = %s", types(evs))
+	}
+	states := map[string]int{}
+	for _, c := range e.a.store.cardsOf(conv) {
+		states[c.State]++
+	}
+	if states[cardProposed] != 2 || states[cardSuperseded] != 1 {
+		t.Errorf("states = %v", states)
+	}
+	// A replaced card is never reported to the model as ended.
+	if note := e.a.takeNotes(conv); note != "" {
+		t.Errorf("note = %q", note)
+	}
+}
+
+func TestDoneCardIsNotReplaced(t *testing.T) {
+	e := newEnv(t, textResp("ok"))
+	conv := e.newConv(t)
+	done := &Card{ID: "call_a", Tool: "url-to-bucket__download", Args: json.RawMessage(`{"url":"https://x.org/a.zip"}`), State: cardDone, Told: true}
+	e.a.store.putCard(conv, done)
+	e.a.supersede(conv, &Card{ID: "call_b", Tool: "url-to-bucket__download", Args: json.RawMessage(`{"url":"https://x.org/a.zip"}`)})
+	if c := e.a.store.card(conv, "call_a"); c.State != cardDone {
+		t.Errorf("done card = %+v", c)
+	}
+}

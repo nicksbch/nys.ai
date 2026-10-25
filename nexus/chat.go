@@ -149,6 +149,9 @@ func (a *app) handleCall(ctx context.Context, sess *mcp.ClientSession, c *Conver
 		if err := a.store.putCard(c.ID, card); err != nil {
 			return "ERROR: could not keep the proposal: " + err.Error()
 		}
+		for _, old := range a.supersede(c.ID, card) {
+			emit(event{Type: "card", ID: old.ID, Card: old})
+		}
 		emit(event{Type: "card", ID: tc.ID, Card: a.store.card(c.ID, tc.ID)})
 		return proposedText
 	}
@@ -160,6 +163,47 @@ func (a *app) handleCall(ctx context.Context, sess *mcp.ClientSession, c *Conver
 		return "ERROR: " + cutForModel(text)
 	}
 	return cutForModel(text)
+}
+
+// supersede replaces the conversation's earlier cards that ask for the same
+// thing as card and haven't run: proposed or failed, same tool, same URLs
+// in the arguments. That is how a reply that corrects a proposal ("put it
+// in uk/crime/2023/ instead") leaves one card to start, not two. Cards
+// with no URL argument are never replaced. It returns them as they now are.
+func (a *app) supersede(conv string, card *Card) []*Card {
+	urls := urlArgs(card.Args)
+	if urls == "" {
+		return nil
+	}
+	var out []*Card
+	for _, old := range a.store.cardsOf(conv) {
+		if old.ID == card.ID || old.Tool != card.Tool || (old.State != cardProposed && old.State != cardFailed) || urlArgs(old.Args) != urls {
+			continue
+		}
+		err := a.store.updateCard(conv, old.ID, func(c *Card) error {
+			c.State, c.Told = cardSuperseded, true
+			return nil
+		}, false)
+		if err == nil {
+			out = append(out, a.store.card(conv, old.ID))
+		}
+	}
+	return out
+}
+
+// urlArgs is the http(s) URLs among a call's arguments, sorted and joined,
+// or "" when there are none.
+func urlArgs(raw json.RawMessage) string {
+	var args map[string]any
+	json.Unmarshal(raw, &args)
+	var urls []string
+	for _, v := range args {
+		if s, ok := v.(string); ok && (strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")) {
+			urls = append(urls, s)
+		}
+	}
+	sort.Strings(urls)
+	return strings.Join(urls, " ")
 }
 
 // takeNotes describes the cards that ended since the model last heard, and

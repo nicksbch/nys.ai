@@ -72,7 +72,7 @@ button.link { border: none; background: none; color: var(--muted); padding: 2px 
 .s-proposed, .s-calling, .s-running { color: var(--warning-text); }
 .s-done { color: var(--good-text); }
 .s-failed { color: var(--critical-text); }
-.s-cancelled { color: var(--muted); }
+.s-cancelled, .s-superseded { color: var(--muted); }
 dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 12px; margin: 8px 0; font-size: 13px; }
 dt { color: var(--text-2); }
 dd { margin: 0; overflow-wrap: anywhere; }
@@ -222,7 +222,12 @@ function addItem(item, live) {
     case "note": t.append(el("div", { class: "note" }, "Told the model since your last message:\n" + item.text)); break;
     case "text": { const d = el("div", { class: "answer" }); d.innerHTML = markdown(item.text); t.append(d); break; }
     case "error": t.append(el("div", { class: "error" }, item.text)); break;
-    case "card": { const box = el("div"); cardBoxes.set(item.card.id, box); t.append(box); updateCard(item.card); break; }
+    case "card": {
+      // A card already shown (one a later proposal replaced) is updated in place.
+      if (!cardBoxes.has(item.card.id)) { const box = el("div"); cardBoxes.set(item.card.id, box); t.append(box); }
+      updateCard(item.card);
+      break;
+    }
     case "call": {
       const c = { call: item, result: null, box: el("div") };
       calls.set(item.id, c);
@@ -255,6 +260,7 @@ const hints = {
   done: "Done.",
   failed: "Failed.",
   cancelled: "Cancelled.",
+  superseded: "Replaced by a later proposal below.",
 };
 
 function size(n) {
