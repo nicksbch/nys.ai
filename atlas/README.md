@@ -10,6 +10,13 @@ It is **read-only**: it never writes a file, publishes an event or calls a
 service. To act (retry, poll now, run again), follow a node's link to the
 service's own page. The design and its reasons are in [SPEC.md](SPEC.md).
 
+- **Services:** the landing tab, and the server's homepage: a card per
+  service's page, with a dot showing whether it answers right now. Click a
+  card to open the service; links use the host you opened atlas on. Every
+  10 s while the tab is visible, atlas tries each page on `127.0.0.1`. Any
+  HTTP answer counts as up, including a login prompt (401) or a redirect;
+  no answer within 2 seconds, or a 5xx, is down. The cards are the
+  `LINKS` list.
 - **Graph:** columns in the order data moves: downloads, S3 prefixes,
   preprocessor jobs, duckpipe pipes, lake tables, lakeshape jobs, marts,
   semantic models, then MCP servers, mcp-hub profiles, agents and foreman
@@ -77,7 +84,8 @@ What each lakeshape job builds comes from running `lakeshape ls -select
 | `graph.go`    | Working out the links, the problems, the live state and the layout |
 | `relay.go`    | Reading topics and events from relay                               |
 | `running.go`  | Pairing each run's start with its result: what is running now      |
-| `server.go`   | The page, `GET /api/graph`, `GET /api/running`, and the password   |
+| `status.go`   | Services: whether each service's page answers                      |
+| `server.go`   | The page, `GET /api/graph`, `/api/running`, `/api/status`, the password |
 | `ui.html`     | The page (plain HTML and JavaScript, built into the binary)        |
 | `deploy.sh`   | Run on your Mac: builds the binary and installs it on the server   |
 | `install.sh`  | Run on the server by `deploy.sh`: binary, login, systemd service   |
@@ -99,7 +107,7 @@ Set `RELAY_URL` and `RELAY_TOKEN` for live state.
 | `-repo`      |                      | Read a checkout of the repo, not the server's files       |
 | `-lakeshape` | `lakeshape`          | lakeshape binary, for what each job builds                |
 | `-listen`    | `127.0.0.1:8101`     | Address to serve the page on                              |
-| `-links`     | the services' ports  | The services' pages, as `name=port[/path]`                |
+| `-links`     | the services' ports  | The services' pages, as `name=port[/path]`: the Services cards, and the graph's links |
 | `-auth`      | `$ATLAS_AUTH`        | `user:pass` for the page; `serve` refuses to start without |
 
 ## Deploy to the server
@@ -122,7 +130,7 @@ lakeshape first: their installs make their configs readable.
 
 ## After deploying
 
-- **URL:** `http://192.168.1.169:8101`, and a card on home.
+- **URL:** `http://192.168.1.169:8101`
 - **Login:** printed once by the first install; `ATLAS_AUTH` in
   `/etc/atlas.env`.
 - **Logs:** `journalctl -u atlas -f`

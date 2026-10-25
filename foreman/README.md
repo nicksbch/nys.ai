@@ -79,7 +79,7 @@ After deploying:
 - **Page:** `http://192.168.1.169:8096/ui` (login: `sudo grep FOREMAN_AUTH /etc/foreman.env`)
 - **Logs:** `journalctl -u foreman -f`
 - **Firewall:** if `ufw` is active, run `sudo ufw allow 8096/tcp`
-- **Home page:** has a `foreman` card, after `ONLY=home ../deploy-all.sh`
+- **atlas:** has a `foreman` card on its Services tab
 
 ## The on-call tasks
 

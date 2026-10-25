@@ -260,7 +260,7 @@ files behind that the service can't open.
 ## The page
 
 `duckpipe run` serves a page on `-listen` (port 8100 on the server, behind a
-login), also linked from [home](../home):
+login), also linked from [atlas](../atlas)'s Services tab:
 
 - **Loading:** the batch being loaded now: pipe, table, its files, size and
   how long it has been running. Maintenance shows too while it runs.

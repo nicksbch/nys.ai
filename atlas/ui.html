@@ -116,6 +116,16 @@ pre.block { background: var(--code); border: 1px solid var(--border); border-rad
 .links li { overflow-wrap: anywhere; }
 button.linky { font: inherit; background: none; border: 0; padding: 0; color: var(--line-hi); cursor: pointer; text-align: left; }
 
+#services .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); max-width: 1100px; }
+#services a.card { display: block; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; color: inherit; text-decoration: none; min-width: 0; }
+#services a.card:hover, #services a.card:focus-visible { border-color: var(--hover); outline: none; }
+#services .name { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; }
+#services .dot { width: 9px; height: 9px; }
+#services .addr { color: var(--text-2); font-size: 13px; margin-top: 4px; overflow-wrap: anywhere; }
+#services .note { color: var(--muted); font-size: 12px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+#services .down .note { color: var(--critical-text); }
+#services > .sub { margin: 0 0 10px; }
+
 #files .f { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); margin-bottom: 8px; }
 #files summary { padding: 8px 12px; cursor: pointer; display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; }
 #files summary code { font-weight: 600; overflow-wrap: anywhere; }
@@ -131,7 +141,8 @@ button.linky { font: inherit; background: none; border: 0; padding: 0; color: va
   <header>
     <h1>atlas</h1>
     <nav role="tablist">
-      <button role="tab" id="tab-graph" aria-selected="true">Graph</button>
+      <button role="tab" id="tab-services" aria-selected="true">Services</button>
+      <button role="tab" id="tab-graph" aria-selected="false">Graph</button>
       <button role="tab" id="tab-running" aria-selected="false">Running</button>
       <button role="tab" id="tab-files" aria-selected="false">Configs</button>
     </nav>
@@ -140,7 +151,9 @@ button.linky { font: inherit; background: none; border: 0; padding: 0; color: va
     <span class="sub" id="sub">loading…</span>
   </header>
 
-  <section id="view-graph">
+  <section id="view-services"><div id="services"><p class="sub" id="services-sub">checking…</p><div class="grid"></div></div></section>
+
+  <section id="view-graph" hidden>
     <details id="problems"><summary>Problems</summary><ul></ul></details>
     <div class="legend" id="legend"></div>
     <div id="wrap"><div id="canvas"><svg id="edges" class="lines"></svg></div></div>
@@ -163,19 +176,20 @@ const $ = id => document.getElementById(id);
 const host = location.hostname.includes(':') ? `[${location.hostname}]` : location.hostname;
 let G = null, R = null, selected = null, filter = '', marked = '';
 
-// --- state in the URL: #node=<id>&filter=<text> ----------------------------
+// --- state in the URL: #tab=<tab>&node=<id>&filter=<text> ------------------
+// With no tab, a node or a filter opens the graph, and nothing opens Services.
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
   selected = p.get('node'); filter = p.get('filter') || '';
   $('filter').value = filter;
-  showTab({ configs: 'files', running: 'running' }[p.get('tab')] || 'graph');
+  showTab({ configs: 'files', running: 'running', graph: 'graph', services: 'services' }[p.get('tab')] || (selected || filter ? 'graph' : 'services'));
 }
 function writeHash() {
   const p = new URLSearchParams();
+  const tab = ['services', 'graph', 'running', 'files'].find(v => !$('view-' + v).hidden);
+  if (tab !== (selected || filter ? 'graph' : 'services')) p.set('tab', tab === 'files' ? 'configs' : tab);
   if (selected) p.set('node', selected);
   if (filter) p.set('filter', filter);
-  if (!$('view-files').hidden) p.set('tab', 'configs');
-  if (!$('view-running').hidden) p.set('tab', 'running');
   history.replaceState(null, '', p.toString() ? '#' + p : location.pathname);
 }
 
@@ -342,8 +356,35 @@ function files() {
 }
 
 function showTab(t) {
-  for (const v of ['graph', 'running', 'files']) {
+  for (const v of ['services', 'graph', 'running', 'files']) {
     $('view-' + v).hidden = t !== v; $('tab-' + v).setAttribute('aria-selected', t === v);
+  }
+  if (t === 'services') loadServices();
+}
+
+// --- services --------------------------------------------------------------
+function serviceCard(s) {
+  const a = document.createElement('a');
+  a.className = 'card ' + (s.up ? 'up' : 'down');
+  a.href = `${location.protocol}//${host}:${s.port}${s.path}`;
+  a.innerHTML = `<div class="name"><span class="dot ${s.up ? 'ok' : 'failed'}"></span>${esc(s.name)}</div>
+    <div class="addr">:${s.port}${s.path === '/' ? '' : esc(s.path)}</div>
+    <div class="note">${s.up ? `up · ${s.ms} ms` : `down · ${esc(s.error || 'no answer')}`}</div>`;
+  return a;
+}
+async function loadServices() {
+  const sub = $('services-sub');
+  try {
+    const r = await fetch('api/status', { cache: 'no-store' });
+    if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
+    const list = await r.json();
+    document.querySelector('#services .grid').replaceChildren(...list.map(serviceCard));
+    const down = list.filter(s => !s.up).length;
+    sub.textContent = (down ? `${down} of ${list.length} down` : `all ${list.length} up`) +
+      ` · checked from the server ${new Date().toLocaleTimeString()} · any answer, even a login prompt, counts as up`;
+    sub.className = 'sub' + (down ? ' bad' : '');
+  } catch (e) {
+    sub.textContent = 'could not check: ' + e.message; sub.className = 'sub bad';
   }
 }
 
@@ -414,6 +455,7 @@ async function load() {
   problems(); files(); draw();
 }
 
+$('tab-services').onclick = () => { showTab('services'); writeHash(); };
 $('tab-graph').onclick = () => { showTab('graph'); writeHash(); };
 $('tab-files').onclick = () => { showTab('files'); writeHash(); };
 $('tab-running').onclick = () => { showTab('running'); writeHash(); };
@@ -427,7 +469,8 @@ legend();
 load().then(() => { if (selected) select(selected); loadRunning(); });
 setInterval(() => { if (!document.hidden) load(); }, 30000);
 setInterval(() => { if (!document.hidden) loadRunning(); }, 5000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) { load(); loadRunning(); } });
+setInterval(() => { if (!document.hidden && !$('view-services').hidden) loadServices(); }, 10000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { load(); loadRunning(); if (!$('view-services').hidden) loadServices(); } });
 </script>
 </body>
 </html>

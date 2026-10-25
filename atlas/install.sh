@@ -14,7 +14,7 @@
 set -euo pipefail
 
 LISTEN="${LISTEN:-[::]:8101}"   # the page; use 127.0.0.1:8101 for local only
-LINKS="${LINKS:-url-to-bucket=8093 preprocessor=8099 duckpipe=8100 garage-ui=8080 lake-ui=8092 foreman=8096/ui analyst=8098 relay=8091/ui vigil=8090}"   # name=port[/path]
+LINKS="${LINKS:-url-to-bucket=8093 preprocessor=8099 duckpipe=8100 garage-ui=8080 lake-ui=8092 foreman=8096/ui analyst=8098 nexus=8102 relay=8091/ui vigil=8090}"   # name=port[/path]
 UI_USER="${UI_USER:-admin}"     # basic-auth user for the page
 
 SRC_BIN="${1:-}"

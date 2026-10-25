@@ -2,7 +2,9 @@
 // where, what that wakes up, and which agent can use which tools. It reads
 // the config files the services run with, works out the links between them,
 // and draws them as one graph, with each node's last relay event. It is
-// read-only: to act, follow a node's link to the service's own page.
+// read-only: to act, follow a node's link to the service's own page. Its
+// first tab is the server's homepage: a card per service's page, with
+// whether it answers right now.
 //
 // Usage:
 //
@@ -33,7 +35,7 @@ import (
 	"time"
 )
 
-const defaultLinks = "url-to-bucket=8093 preprocessor=8099 duckpipe=8100 garage-ui=8080 lake-ui=8092 foreman=8096/ui analyst=8098 relay=8091/ui vigil=8090"
+const defaultLinks = "url-to-bucket=8093 preprocessor=8099 duckpipe=8100 garage-ui=8080 lake-ui=8092 foreman=8096/ui analyst=8098 nexus=8102 relay=8091/ui vigil=8090"
 
 func main() {
 	log.SetFlags(0)
@@ -46,7 +48,7 @@ func main() {
 	repo := fs.String("repo", "", "read the configs from this checkout of the repo, not from the server's files")
 	lakeshape := fs.String("lakeshape", "lakeshape", "lakeshape binary, run as `lakeshape ls` to see what each job builds")
 	listen := fs.String("listen", "127.0.0.1:8101", "address to serve the page on (serve)")
-	links := fs.String("links", defaultLinks, "the services' pages, as name=port[/path] separated by spaces (serve)")
+	links := fs.String("links", defaultLinks, "the services' pages, as name=port[/path] separated by spaces: the Services cards and the graph's links (serve)")
 	auth := fs.String("auth", os.Getenv("ATLAS_AUTH"), "user:pass for the page (serve)")
 	fs.Parse(os.Args[2:])
 
@@ -80,7 +82,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `atlas: how the server's services are wired together
+	fmt.Fprint(os.Stderr, `atlas: the server's homepage, and how its services are wired together
 
 usage:
   atlas serve [-listen 127.0.0.1:8101] [-links "name=port[/path] ..."]

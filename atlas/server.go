@@ -49,7 +49,8 @@ type runningView struct {
 }
 
 // link is where a service's own page is: a port and a path on the host the
-// page was opened on.
+// page was opened on. The Services tab lists them all, with whether each
+// answers.
 type link struct {
 	Name string `json:"name"`
 	Port int    `json:"port"`
@@ -128,6 +129,11 @@ func (a *atlas) routes(auth string) http.Handler {
 			*graph
 			Links []link `json:"links"`
 		}{g, a.links})
+	})
+	private("GET /api/status", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		json.NewEncoder(w).Encode(statuses(r.Context(), a.links))
 	})
 	private("GET /api/running", func(w http.ResponseWriter, r *http.Request) {
 		v := a.runs(r.Context())
