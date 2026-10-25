@@ -44,6 +44,12 @@ approve it.
   there. The walking that `list_objects` leaves to the model was too much
   for the small local model, which stopped one level down; this is plain
   matching, so the same URL always gets the same answer.
+- **`list_downloads`** (read-only, added 2026-10-25 for nexus):
+  `{"limit"?}` → `{"downloads": [...]}`, the page's list (`GET
+  /api/downloads`), newest first: run id, state (`queued`, `running`,
+  `ok`, `failed`), URL, bucket, key, bytes, total and rate while running,
+  and the error. 20 by default, at most 100. So "what's downloading?" has
+  an answer outside a nexus card.
 - **`download`'s description** spells out the key: a full key, or a
   folder ending with `/` (the file keeps its name), never the file's name
   followed by `/`.

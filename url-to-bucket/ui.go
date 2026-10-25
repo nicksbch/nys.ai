@@ -221,13 +221,23 @@ type download struct {
 }
 
 func (u *ui) downloads(w http.ResponseWriter, r *http.Request) {
+	list, err := u.downloadList(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+// downloadList is the page's list: the recent runs from relay, with live
+// progress for the ones running here.
+func (u *ui) downloadList(ctx context.Context) ([]download, error) {
 	var resp struct {
 		Events []historyEvent `json:"events"`
 	}
 	path := fmt.Sprintf("/v1/events?topic=%s&last=%d", topic, historyEvents)
-	if err := u.relay.do(r.Context(), http.MethodGet, path, nil, &resp); err != nil {
-		writeErr(w, http.StatusBadGateway, fmt.Errorf("reading relay: %w", err))
-		return
+	if err := u.relay.do(ctx, http.MethodGet, path, nil, &resp); err != nil {
+		return nil, fmt.Errorf("reading relay: %w", err)
 	}
 	u.mu.Lock()
 	live := map[string]liveProgress{}
@@ -235,7 +245,7 @@ func (u *ui) downloads(w http.ResponseWriter, r *http.Request) {
 		live[id] = liveProgress{p.done.Load(), p.total.Load(), p.speed()}
 	}
 	u.mu.Unlock()
-	writeJSON(w, http.StatusOK, runs(resp.Events, live))
+	return runs(resp.Events, live), nil
 }
 
 // liveProgress is a download running in this process.

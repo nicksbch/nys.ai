@@ -19,7 +19,7 @@ and a service.
   bytes, speed and ETA, and the recent ones with their errors (see
   [The page](#the-page)).
 - **MCP:** `download`, plus three read-only tools that say where a file
-  should go, for agents through [mcp-hub](../mcp-hub) (see [MCP](#mcp)).
+  should go and one that lists the downloads, for agents through [mcp-hub](../mcp-hub) (see [MCP](#mcp)).
 - **Survives restarts:** a request whose download was cut short by a
   restart runs again, with the same run ID.
 
@@ -180,7 +180,7 @@ All on topic `url-to-bucket.download`, sharing the run's `run_id`:
 At `/mcp` on the page's address, behind `Authorization: Bearer
 $URL_TO_BUCKET_MCP_TOKEN` (the page's login doesn't open it). Agents reach
 them through mcp-hub as `url-to-bucket__*`; the `oncall` profile has
-`download`, and the `nexus` profile has all four.
+`download`, and the `nexus` profile has all five.
 
 | Tool           | Read-only | What it does                                                          |
 |----------------|-----------|-----------------------------------------------------------------------|
@@ -188,6 +188,7 @@ them through mcp-hub as `url-to-bucket__*`; the `oncall` profile has
 | `list_buckets` | yes       | The buckets the key can see                                           |
 | `list_objects` | yes       | `{bucket, prefix?}`: one level, like `ls`; at most 200 entries, with `truncated` |
 | `suggest_key`  | yes       | `{bucket, url}`: the folders already holding files named like the URL's file (`2023-08.zip` matches `####-##.zip`), best first, each with the full key to use. Reads at most 20,000 keys |
+| `list_downloads` | yes     | `{limit?}`: the page's list, newest first (20 by default, at most 100): state, URL, bucket, key, bytes, live rate, error |
 
 Details in [SPEC-mcp.md](SPEC-mcp.md).
 

@@ -93,7 +93,9 @@ bucket isn't clear rather than guess.
 ## Changes outside nexus
 
 - **mcp-hub `servers.json`:** a profile `nexus` with url-to-bucket's
-  `download` and `list_buckets`.
+  `download` and `list_buckets`. Added 2026-10-25: url-to-bucket's
+  `list_downloads` and vigil's six read-only tools, so "did it work?",
+  "what's downloading?" and "how much disk is left?" have answers.
 - **url-to-bucket:** a read-only tool `suggest_key` (added 2026-10-25):
   the folders already holding files named like the URL's file, with the
   full key to use. The small local model stopped one level into
@@ -102,6 +104,8 @@ bucket isn't clear rather than guess.
   one level of a bucket like `ls`, so the model can find where similar
   files already are before choosing a key: without it, a download with no
   path given went to the top of the bucket.
+- **url-to-bucket:** a read-only tool `list_downloads` (added
+  2026-10-25), the page's list of recent downloads.
 - **url-to-bucket:** a read-only tool `list_buckets`, the buckets the
   service can write to (what the page's bucket list shows, from
   `GET /api/buckets`). Without it the model has to guess bucket names. It

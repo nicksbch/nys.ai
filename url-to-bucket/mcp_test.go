@@ -17,7 +17,7 @@ import (
 	relay "relay/client"
 )
 
-// publishedRelay records the events published to it.
+// publishedRelay records the events published to it, and lists them back.
 type publishedRelay struct {
 	mu     sync.Mutex
 	events []relay.Event
@@ -25,6 +25,10 @@ type publishedRelay struct {
 
 func (p *publishedRelay) handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(map[string]any{"events": p.published()})
+			return
+		}
 		var e relay.Event
 		json.NewDecoder(r.Body).Decode(&e)
 		p.mu.Lock()
@@ -80,7 +84,8 @@ func mcpServer(t *testing.T) (*publishedRelay, *httptest.Server) {
 	t.Cleanup(fakeS3.Close)
 	client := s3.New(s3.Options{BaseEndpoint: aws.String(fakeS3.URL), Region: "garage", UsePathStyle: true,
 		Credentials: credentials.NewStaticCredentialsProvider("k", "s", "")})
-	u := &ui{bus: &relay.Client{URL: rs.URL, HTTP: &http.Client{}}, s3: client, active: map[string]*progress{}}
+	u := &ui{bus: &relay.Client{URL: rs.URL, HTTP: &http.Client{}}, relay: &consumer{url: rs.URL, http: &http.Client{}},
+		s3: client, active: map[string]*progress{}}
 	srv := httptest.NewServer(u.handler("admin:pw", "mcp-token"))
 	t.Cleanup(srv.Close)
 	return rel, srv
@@ -101,14 +106,14 @@ func TestMCPDownload(t *testing.T) {
 	defer s.Close()
 
 	tools, err := s.ListTools(context.Background(), nil)
-	if err != nil || len(tools.Tools) != 4 {
+	if err != nil || len(tools.Tools) != 5 {
 		t.Fatalf("tools = %v, %v", tools, err)
 	}
 	var tool *mcp.Tool
 	for _, x := range tools.Tools {
 		if x.Name == "download" {
 			tool = x
-		} else if (x.Name != "list_buckets" && x.Name != "list_objects" && x.Name != "suggest_key") || x.Annotations == nil || !x.Annotations.ReadOnlyHint {
+		} else if (x.Name != "list_buckets" && x.Name != "list_objects" && x.Name != "suggest_key" && x.Name != "list_downloads") || x.Annotations == nil || !x.Annotations.ReadOnlyHint {
 			t.Errorf("tool = %+v", x)
 		}
 	}
@@ -131,6 +136,19 @@ func TestMCPDownload(t *testing.T) {
 	json.Unmarshal(b, &data)
 	if data["url"] != "https://x.org/a.iso" || data["bucket"] != "home" || data["key"] != "isos/" {
 		t.Errorf("data = %v", data)
+	}
+
+	// The request is in the list, queued, with its key resolved.
+	res, err = s.CallTool(context.Background(), &mcp.CallToolParams{Name: "list_downloads"})
+	if err != nil || res.IsError {
+		t.Fatalf("list_downloads = %+v, %v", res, err)
+	}
+	var dls downloadsOut
+	b, _ = json.Marshal(res.StructuredContent)
+	json.Unmarshal(b, &dls)
+	if len(dls.Downloads) != 1 || dls.Downloads[0].RunID != evs[0].RunID || dls.Downloads[0].State != "queued" ||
+		dls.Downloads[0].Key != "isos/a.iso" || dls.Downloads[0].Bucket != "home" {
+		t.Errorf("list_downloads = %s", b)
 	}
 
 	res, err = s.CallTool(context.Background(), &mcp.CallToolParams{Name: "list_buckets"})

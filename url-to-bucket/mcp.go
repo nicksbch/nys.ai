@@ -4,7 +4,8 @@ package main
 // (url-to-bucket__download). download publishes the same "requested" event
 // as the page and returns the run's ID at once; the download reports on
 // relay as any other. list_buckets, list_objects and suggest_key say where
-// downloads can go, what is already there, and where a new one belongs.
+// downloads can go, what is already there, and where a new one belongs;
+// list_downloads is the page's list of recent downloads.
 // See SPEC-mcp.md.
 
 import (
@@ -78,6 +79,16 @@ type objectsOut struct {
 	Truncated bool     `json:"truncated"` // more than maxListed at this level
 }
 
+const defaultListed = 20 // downloads list_downloads returns by default
+
+type downloadsIn struct {
+	Limit int `json:"limit,omitempty" jsonschema:"how many downloads to return, newest first; default 20, at most 100"`
+}
+
+type downloadsOut struct {
+	Downloads []download `json:"downloads"`
+}
+
 type downloadOut struct {
 	RunID string `json:"run_id"`
 	Topic string `json:"topic"`
@@ -103,6 +114,10 @@ func (u *ui) mcpHandler() http.Handler {
 			"(same extension, digits in the same places), best first, each with the full key to download to and " +
 			"examples of what is there. Use the first suggestion's key for download. No suggestions means nothing " +
 			"similar is in the bucket: ask the person where to put it."}, u.toolSuggest)
+	mcp.AddTool(s, &mcp.Tool{Name: "list_downloads", Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+		Description: "Recent downloads, newest first, as the page lists them: run_id, state (queued, running, ok, " +
+			"failed), url, bucket, key, bytes so far or in all, total and rate while running, and the error of a " +
+			"failed one."}, u.toolDownloads)
 	return mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return s },
 		&mcp.StreamableHTTPOptions{Stateless: true})
 }
@@ -160,6 +175,21 @@ func (u *ui) toolSuggest(ctx context.Context, req *mcp.CallToolRequest, in sugge
 	out.Scanned, out.Truncated = len(objs), p.HasMorePages()
 	out.Suggestions = suggest(objs, file)
 	return nil, out, nil
+}
+
+func (u *ui) toolDownloads(ctx context.Context, req *mcp.CallToolRequest, in downloadsIn) (*mcp.CallToolResult, downloadsOut, error) {
+	list, err := u.downloadList(ctx)
+	if err != nil {
+		return nil, downloadsOut{}, err
+	}
+	n := in.Limit
+	if n <= 0 {
+		n = defaultListed
+	}
+	if len(list) > n {
+		list = list[:n]
+	}
+	return nil, downloadsOut{Downloads: list}, nil
 }
 
 func (u *ui) toolDownload(ctx context.Context, req *mcp.CallToolRequest, in downloadIn) (*mcp.CallToolResult, downloadOut, error) {

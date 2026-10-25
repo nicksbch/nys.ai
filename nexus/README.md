@@ -7,11 +7,12 @@ then follows the download until it ends, and the model is told how it went,
 so "did it work?" and "now the arm64 one" work as follow-ups.
 
 - **What it can do** is exactly the tools of mcp-hub's `nexus` profile:
-  today url-to-bucket's `download`, plus `list_buckets`, `list_objects`
-  and `suggest_key`, which finds the folders already holding files named
-  like the one to download (`2023-08.zip` next to `uk/crime/2026-08.zip`)
-  and hands the model the full key, so the card shows exactly where the
-  file will go.
+  today url-to-bucket's `download`, plus `list_buckets`, `list_objects`,
+  `list_downloads` and `suggest_key`, and vigil's six read-only tools
+  (system, alerts, jobs, events, runs). `suggest_key` finds the folders
+  already holding files named like the one to download (`2023-08.zip`
+  next to `uk/crime/2026-08.zip`) and hands the model the full key, so the
+  card shows exactly where the file will go.
 - **Corrections by reply:** if the key is wrong, or there was nothing to
   suggest and the model asked, reply with a folder or key. The model
   proposes again, and the new card replaces the earlier one for the same
