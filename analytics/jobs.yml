@@ -24,3 +24,12 @@ jobs:
         data: {table: lake.uk.crime_stop_and_search}
     debounce: 5m
     max_wait: 1h
+
+  # Test stg_onspd after duckpipe loads a new ONSPD release (the view reads
+  # the new rows by itself).
+  - name: onspd
+    select: source:uk.onspd+
+    on:
+      - topic: duckpipe.ingest
+        type: ok
+        data: {table: lake.uk.onspd}

@@ -1,0 +1,129 @@
+models:
+  - name: stg_onspd
+    description: >
+      ONS Postcode Directory (latest release): every UK postcode, live and
+      terminated, with its grid reference and the statutory, electoral,
+      health and census areas it falls in. Area codes are ONS GSS codes; the
+      two digits in a column name are the year of the boundaries. Null where
+      the postcode is in no such area.
+    columns:
+      - name: pcds
+        description: Postcode, one space between outward and inward code (AB1 0AA)
+        tests: [not_null, unique]
+      - name: pcd7
+        description: Postcode padded to 7 characters (AB1 0AA, AB10 1AA, AB101AA)
+        tests: [not_null, unique]
+      - name: pcd8
+        description: Postcode padded to 8 characters
+      - name: dointr
+        description: Month the postcode was introduced
+        tests: [not_null]
+      - name: doterm
+        description: Month the postcode was terminated; null if live
+      - name: is_large_user
+        description: A large-user postcode (one address getting 25+ items a day)
+        tests: [not_null]
+      - name: gridind
+        description: >
+          Quality of the grid reference, 1 (within the building of the
+          matched address) to 8; 9 = no grid reference
+        tests:
+          - not_null
+          - accepted_values: {values: ['1', '2', '3', '4', '5', '6', '8', '9'], severity: warn}
+      - name: east1m
+        description: OS grid easting, 1 m (Irish grid in Northern Ireland)
+      - name: north1m
+        description: OS grid northing, 1 m (Irish grid in Northern Ireland)
+      - name: lat
+        description: Latitude (WGS84)
+      - name: long
+        description: Longitude (WGS84)
+      - name: ctry25cd
+        description: Country (E92 England, W92 Wales, S92 Scotland, N92 Northern Ireland, L93 Channel Islands, M83 Isle of Man)
+        tests:
+          - not_null
+          - accepted_values:
+              severity: warn
+              values: [E92000001, W92000004, S92000003, N92000002, L93000001, M83000003]
+      - name: rgn25cd
+        description: Region (England)
+      - name: cty25cd
+        description: County (England, two-tier areas)
+      - name: ced25cd
+        description: County electoral division
+      - name: lad25cd
+        description: Local authority district / unitary authority
+      - name: wd25cd
+        description: Electoral ward / division
+      - name: parncp25cd
+        description: Parish / non-civil parished area (England), community (Wales)
+      - name: pcon24cd
+        description: Westminster parliamentary constituency (2024 boundaries)
+      - name: eer20cd
+        description: European electoral region
+      - name: itl25cd
+        description: International Territorial Level (former NUTS)
+      - name: ttwa15cd
+        description: Travel to work area
+      - name: bua24cd
+        description: Built-up area
+      - name: npark16cd
+        description: National park
+      - name: pfa23cd
+        description: Police force area
+      - name: educ23cd
+        description: Local education authority
+      - name: cal26cd
+        description: Cancer alliance
+      - name: lep21cd1
+        description: Local enterprise partnership (first)
+      - name: lep21cd2
+        description: Local enterprise partnership (second, where the area is in two)
+      - name: hlth19cd
+        description: Former strategic health authority / health board
+      - name: nhser24cd
+        description: NHS England region
+      - name: icb26cd
+        description: Integrated care board
+      - name: sicbl26cd
+        description: Sub-ICB location (England), local health board (Wales), and equivalents
+      - name: pco19cd
+        description: Former primary care trust / organisation
+      - name: oa21cd
+        description: 2021 census output area
+      - name: lsoa21cd
+        description: 2021 census lower layer super output area (data.police.uk's lsoa_code)
+      - name: msoa21cd
+        description: 2021 census middle layer super output area
+      - name: ruc21ind
+        description: 2021 rural-urban classification of the output area
+      - name: oa11cd
+        description: 2011 census output area
+      - name: lsoa11cd
+        description: 2011 census lower layer super output area
+      - name: msoa11cd
+        description: 2011 census middle layer super output area
+      - name: wz11cd
+        description: 2011 census workplace zone
+      - name: ruc11ind
+        description: 2011 rural-urban classification of the output area
+      - name: oac11ind
+        description: 2011 output area classification (supergroup, group, subgroup)
+      - name: oa01cd
+        description: 2001 census output area
+      - name: lsoa01cd
+        description: 2001 census lower layer super output area
+      - name: msoa01cd
+        description: 2001 census middle layer super output area
+      - name: ruc01ind
+        description: 2001 rural-urban classification
+      - name: oac01ind
+        description: 2001 output area classification
+      - name: wdstl05cd
+        description: 2005 statistical ward
+      - name: wdcas03cd
+        description: 2003 census area statistics ward
+      - name: ssr95cd
+        description: Former standard statistical region
+      - name: imd20ind
+        description: Index of multiple deprivation rank of the LSOA, within its own country (1 = most deprived)

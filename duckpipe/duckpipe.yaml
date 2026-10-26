@@ -57,3 +57,14 @@ pipes:
     pattern: "*-stop-and-search.csv"
     table: uk.crime_stop_and_search
     options: "header = true, all_varchar = true, normalize_names = true"
+
+  # ONS Postcode Directory (ONSPD_<MON>_<YYYY>/ONSPD_<MON>_<YYYY>_UK.csv,
+  # quarterly): every UK postcode, live and terminated, with the areas it
+  # falls in. Each release is a full snapshot that replaces the last. The CSV
+  # has a header. Kept as text; cast later. The folder is spelled osnpd.
+  - name: onspd
+    bucket: home
+    prefix: uk/osnpd/
+    pattern: "ONSPD_*_UK.csv"
+    table: uk.onspd
+    options: "header = true, all_varchar = true, normalize_names = true"
