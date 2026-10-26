@@ -203,6 +203,8 @@ ONLY="duckpipe lakeshape" ./deploy-all.sh        # add preprocessor for zips
 Then confirm through the agent interfaces (mcp-hub `duckpipe__load_history`,
 `lakeshape__…`), or on the server: `sudo duckpipectl history <pipe>`, and
 that the job ran with its tests passing. A large file can take minutes.
+Query the lake read-only (no sudo) to check the rows:
+`ssh -p 2222 192.168.1.169 'ducklake -c "SELECT count(*) FROM <area>.<table>"'`.
 
 ## 11. Finish
 

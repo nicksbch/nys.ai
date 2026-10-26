@@ -3,7 +3,8 @@
 # DuckLake (https://ducklake.select/docs/stable/) on the Garage server:
 #   - catalog : PostgreSQL (database "ducklake"), reachable from localhost and the LAN
 #   - data    : Parquet files in the Garage bucket s3://lake/
-#   - client  : DuckDB CLI + "sudo ducklake", which opens the lake attached as "lake"
+#   - client  : DuckDB CLI + "ducklake", which opens the lake attached as "lake":
+#               read-write with sudo, read-only for members of READ_GROUP
 # PostgreSQL is the catalog DuckLake recommends for several clients, local or
 # remote, writing at the same time (duckpipe, your Mac, other apps).
 #
@@ -13,8 +14,9 @@
 # Override defaults with env vars, e.g.:
 #   sudo LAN_CIDR=192.168.1.0/24 LAKE_BUCKET=lake bash ducklake-setup.sh
 #
-# Safe to re-run: /etc/ducklake.env (passwords and S3 key) is kept, the role,
-# database, bucket, key and catalog are only created when missing.
+# Safe to re-run: /etc/ducklake.env and /etc/ducklake-read.env (passwords and
+# S3 keys) are kept, the roles, database, bucket, keys and catalog are only
+# created when missing. READ_GROUP's members are set to READ_USERS each run.
 #
 # If /etc/duckpipe.yaml still points at an SQLite catalog, duckpipe is
 # switched to this lake. Tables already in the SQLite catalog are copied over
@@ -28,6 +30,12 @@ PG_DB="${PG_DB:-ducklake}"
 PG_USER="${PG_USER:-ducklake}"
 S3_ENDPOINT="${S3_ENDPOINT:-http://127.0.0.1:3900}"
 DUCKDB_VERSION="${DUCKDB_VERSION:-v1.5.6}"   # keep in step with duckpipe's install.sh
+# Read-only access without sudo (agents querying over ssh): a read-only S3 key
+# and catalog role, in an env file readable by READ_GROUP.
+READ_KEY_NAME="${READ_KEY_NAME:-ducklake-read-key}"
+READ_PG_ROLE="${READ_PG_ROLE:-ducklake_read}"
+READ_GROUP="${READ_GROUP:-lake-readers}"
+READ_USERS="${READ_USERS-${SUDO_USER:-}}"   # space-separated; default: whoever runs sudo
 # LAN that may reach PostgreSQL (the default route's subnet); empty = localhost only.
 lan_dev=$(ip -o -4 route show default 2>/dev/null | awk '{for (i=1; i<NF; i++) if ($i == "dev") {print $(i+1); exit}}')
 lan_route=$(ip -o -4 route list scope link proto kernel dev "${lan_dev:-lo}" 2>/dev/null | head -n1)
@@ -38,6 +46,7 @@ DUCKDB=/usr/local/bin/duckdb
 WRAPPER=/usr/local/bin/ducklake
 GARAGE=/usr/local/bin/garage
 ENV_FILE=/etc/ducklake.env
+READ_ENV_FILE=/etc/ducklake-read.env
 CATALOG="ducklake:postgres:dbname=$PG_DB"   # host/user/password come from the PG* vars in $ENV_FILE
 
 log() { printf '\n==> %s\n' "$*"; }
@@ -50,6 +59,8 @@ command -v openssl >/dev/null || die "openssl is required (apt install openssl)"
 [[ -x $GARAGE ]] || die "$GARAGE not found: run garage-setup.sh first"
 "$GARAGE" status >/dev/null 2>&1 || die "garage is not running (systemctl status garage)"
 [[ -z $LAN_CIDR || -n $HOST_IP ]] || die "could not find this host's LAN address; set HOST_IP"
+[[ $READ_PG_ROLE =~ ^[a-z_][a-z0-9_]*$ ]] || die "READ_PG_ROLE must be a plain lower-case name"
+for u in $READ_USERS; do id -u "$u" >/dev/null 2>&1 || die "READ_USERS: no user '$u'"; done
 cd /   # psql runs as postgres, which may not be able to read the current directory
 
 # --- 1. DuckDB CLI -----------------------------------------------------------
@@ -168,22 +179,93 @@ ALTER ROLE "$PG_USER" LOGIN PASSWORD '$PGPASSWORD';
 SELECT 'CREATE DATABASE "$PG_DB" OWNER "$PG_USER"' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$PG_DB')\gexec
 EOF
 
-# --- 6. ducklake command -----------------------------------------------------
+# --- 6. Read-only access -----------------------------------------------------
+# The same grants as lake-ui and semantic: SELECT on every catalog table the
+# owner has now, and by default on the ones it creates later.
+if "$GARAGE" key info "$READ_KEY_NAME" >/dev/null 2>&1; then
+  log "Key '$READ_KEY_NAME' already exists"
+else
+  log "Creating key '$READ_KEY_NAME'"
+  "$GARAGE" key create "$READ_KEY_NAME" >/dev/null
+fi
+"$GARAGE" bucket allow --read "$LAKE_BUCKET" --key "$READ_KEY_NAME"
+
+getent group "$READ_GROUP" >/dev/null || { log "Creating group '$READ_GROUP'"; groupadd --system "$READ_GROUP"; }
+log "Members of '$READ_GROUP': ${READ_USERS:-none}"
+gpasswd -M "$(tr -s ' ' ',' <<<"$READ_USERS" | sed 's/^,//; s/,$//')" "$READ_GROUP" >/dev/null
+
+if [[ -e $READ_ENV_FILE ]]; then
+  log "$READ_ENV_FILE already exists, leaving it alone"
+else
+  log "Writing $READ_ENV_FILE"
+  info=$("$GARAGE" key info --show-secret "$READ_KEY_NAME")
+  key_id=$(grep -oE 'GK[0-9a-f]{24}' <<<"$info" | head -n1 || true)
+  secret=$(grep -oE '\b[0-9a-f]{64}\b' <<<"$info" | head -n1 || true)
+  [[ -n $key_id && -n $secret ]] || die "could not read key ID/secret from 'garage key info --show-secret $READ_KEY_NAME'"
+  umask 077
+  cat >"$READ_ENV_FILE" <<EOF
+PGHOST=127.0.0.1
+PGPORT=5432
+PGDATABASE=$PG_DB
+PGUSER=$READ_PG_ROLE
+PGPASSWORD=$(openssl rand -hex 24)
+AWS_ACCESS_KEY_ID=$key_id
+AWS_SECRET_ACCESS_KEY=$secret
+AWS_REGION=garage
+AWS_ENDPOINT_URL=$S3_ENDPOINT
+EOF
+  umask 022
+fi
+chown root:"$READ_GROUP" "$READ_ENV_FILE"
+chmod 0640 "$READ_ENV_FILE"
+read_password=$(grep '^PGPASSWORD=' "$READ_ENV_FILE" | cut -d= -f2-)
+[[ $read_password =~ ^[0-9a-f]+$ ]] || die "PGPASSWORD in $READ_ENV_FILE must be hex"
+
+log "Granting '$READ_PG_ROLE' read-only access to database '$PG_DB'"
+runuser -u postgres -- env -u PGHOST -u PGPORT -u PGDATABASE -u PGUSER -u PGPASSWORD \
+  psql -X -q -v ON_ERROR_STOP=1 -d "$PG_DB" <<EOF
+SELECT 'CREATE ROLE "$READ_PG_ROLE" LOGIN' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$READ_PG_ROLE')\gexec
+ALTER ROLE "$READ_PG_ROLE" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD '$read_password';
+GRANT CONNECT ON DATABASE "$PG_DB" TO "$READ_PG_ROLE";
+DO \$\$
+DECLARE s text;
+BEGIN
+  FOR s IN SELECT nspname FROM pg_namespace
+           WHERE nspname = 'public' OR nspowner = (SELECT oid FROM pg_roles WHERE rolname = '$PG_USER')
+  LOOP
+    EXECUTE format('GRANT USAGE ON SCHEMA %I TO %I', s, '$READ_PG_ROLE');
+    EXECUTE format('GRANT SELECT ON ALL TABLES IN SCHEMA %I TO %I', s, '$READ_PG_ROLE');
+  END LOOP;
+END
+\$\$;
+ALTER DEFAULT PRIVILEGES FOR ROLE "$PG_USER" GRANT SELECT ON TABLES TO "$READ_PG_ROLE";
+EOF
+
+# --- 7. ducklake command -----------------------------------------------------
 log "Installing $WRAPPER"
 cat >"$WRAPPER" <<EOF
 #!/usr/bin/env bash
 # Open the DuckLake in the DuckDB CLI, attached as "lake":
-#   sudo ducklake                         interactive
-#   sudo ducklake -c "SHOW ALL TABLES"    one query
-# The secrets come from $ENV_FILE and reach duckdb through an -init pipe,
-# so they never show up in a process list.
+#   ducklake                         interactive
+#   ducklake -c "SHOW ALL TABLES"    one query
+# With sudo it is read-write ($ENV_FILE); members of group $READ_GROUP get
+# it read-only ($READ_ENV_FILE). The secrets reach duckdb through an -init
+# pipe, so they never show up in a process list.
 set -euo pipefail
-set -a; . $ENV_FILE; set +a
+if [[ -r $ENV_FILE ]]; then
+  env_file=$ENV_FILE; attach_opts=
+elif [[ -r $READ_ENV_FILE ]]; then
+  env_file=$READ_ENV_FILE; attach_opts=" (READ_ONLY)"
+else
+  echo "ducklake: run with sudo, or join group $READ_GROUP for read-only access" >&2
+  exit 1
+fi
+set -a; . "\$env_file"; set +a
 exec $DUCKDB -init <(cat <<SQL
 .output /dev/null
 CREATE TEMPORARY SECRET ducklake_s3 (TYPE s3, KEY_ID '\$AWS_ACCESS_KEY_ID', SECRET '\$AWS_SECRET_ACCESS_KEY',
   REGION '\$AWS_REGION', ENDPOINT '\${AWS_ENDPOINT_URL#*://}', URL_STYLE 'path', USE_SSL \$([[ \$AWS_ENDPOINT_URL == https* ]] && echo true || echo false));
-ATTACH '$CATALOG' AS lake;
+ATTACH '$CATALOG' AS lake\$attach_opts;
 USE lake;
 .output
 SQL
@@ -191,7 +273,7 @@ SQL
 EOF
 chmod 0755 "$WRAPPER"
 
-# --- 7. Create the lake ------------------------------------------------------
+# --- 8. Create the lake ------------------------------------------------------
 # DATA_PATH is stored in the catalog the first time; later ATTACHes reuse it.
 log "Creating / checking the lake (catalog $PG_DB, data s3://$LAKE_BUCKET/)"
 s3_host=${AWS_ENDPOINT_URL#*://}
@@ -207,7 +289,7 @@ SELECT option_name, value FROM ducklake_options('lake') WHERE option_name IN ('v
 SELECT count(*) AS files_in_bucket FROM glob('s3://$LAKE_BUCKET/**');
 EOF
 
-# --- 8. duckpipe -------------------------------------------------------------
+# --- 9. duckpipe -------------------------------------------------------------
 # A duckpipe installed before this lake keeps its tables in an SQLite
 # catalog. They are copied into this lake (load history included, so no file
 # is loaded twice) in one transaction that only commits when every table's
@@ -279,7 +361,9 @@ DuckLake is ready.
   Catalog  : PostgreSQL $PG_VER, database '$PG_DB', user '$PG_USER' ($listen:5432)
   Data     : s3://$LAKE_BUCKET/ (Garage, key '$KEY_NAME')
   Secrets  : $ENV_FILE   (sudo cat $ENV_FILE)
+  Read-only: $READ_ENV_FILE, group '$READ_GROUP' (${READ_USERS:-no members})
   On server: sudo ducklake        (DuckDB CLI with the lake attached as "lake")
+             ducklake             (the same, read-only, for members of '$READ_GROUP')
 
 From another machine (DuckDB 1.5+), with the values from $ENV_FILE:
   INSTALL ducklake; INSTALL postgres;
