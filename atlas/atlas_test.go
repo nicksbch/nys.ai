@@ -151,7 +151,6 @@ func TestProblems(t *testing.T) {
 	all := strings.Join(got, "\n")
 	for _, want := range []string{
 		"pre.yaml: preprocessor job z writes to home/out/, which no pipe or job reads",
-		"dp.yaml: pipe a reads home/other/, which no preprocessor job writes to",
 		"sources.yml: sources.yml lists raw.b, which no pipe loads",
 		"jobs.yml: job j waits for loads of lake.raw.missing, which no pipe loads",
 		"sem.yml: semantic model m is on marts.nope, which isn't a mart",
@@ -163,6 +162,11 @@ func TestProblems(t *testing.T) {
 		if !strings.Contains(all, want) {
 			t.Errorf("missing problem %q in:\n%s", want, all)
 		}
+	}
+
+	// A pipe with nothing seen feeding it may read files put there by hand.
+	if strings.Contains(all, "pipe a reads") {
+		t.Errorf("pipe a with no feeder is reported as a problem:\n%s", all)
 	}
 
 	p.Duckpipe = filepath.Join(dir, "broken.yaml")

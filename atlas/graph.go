@@ -166,7 +166,6 @@ func (b *builder) storage(c *configs) {
 
 	// A prefix a job writes feeds every reader of the same prefix, or one
 	// above or below it, other than the job itself.
-	fed := map[string]bool{}
 	for _, w := range readers {
 		if w.writes == "" {
 			continue
@@ -181,7 +180,6 @@ func (b *builder) storage(c *configs) {
 				continue
 			}
 			wrote = true
-			fed[r.id] = true
 			if rid != w.writes {
 				b.edge(w.writes, rid, "files", "")
 			}
@@ -206,7 +204,6 @@ func (b *builder) storage(c *configs) {
 		for _, r := range readers {
 			if r.bucket == bucket && strings.HasPrefix(key, r.prefix) && patternMatch(r.pattern, strings.TrimPrefix(key, r.prefix)) {
 				counts[prefixID(r.bucket, r.prefix)]++
-				fed[r.id] = true
 				read = true
 			}
 		}
@@ -221,11 +218,6 @@ func (b *builder) storage(c *configs) {
 		u2b.Info = append(u2b.Info, plural(total, "download")+" in the last 30 days")
 		if unread > 0 {
 			u2b.Info = append(u2b.Info, fmt.Sprintf("%d of them went where no job or pipe reads", unread))
-		}
-		for _, p := range c.Pipes {
-			if !fed["pipe:"+p.Name] {
-				b.problem(p.at, "pipe %s reads %s/%s, which no preprocessor job writes to and no download reached in 30 days", p.Name, p.Bucket, p.Prefix)
-			}
 		}
 	}
 }

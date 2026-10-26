@@ -120,8 +120,6 @@ them.
 A list above the graph of links that don't add up. Each problem names the
 file and line it comes from:
 
-- a duckpipe pipe whose prefix no job writes to and no download has
-  reached (in 30 days);
 - a preprocessor job's `to:` prefix that no pipe reads;
 - a lakeshape job filter on a table no pipe loads, or a topic relay has
   never seen;
