@@ -136,3 +136,22 @@ done out of models selected) and foreman tasks. It also lists what is
 waiting (`requested` with no `started`) and what ended in the last 15
 minutes, and marks the running nodes on the graph. Queued files and
 byte-level progress are left out. Built 2026-10-25, not yet deployed.
+
+## duckpipe
+
+### Reload a table from an agent — `idea`
+
+Reloading a pipe's table (drop it and its load history together) is a sudo
+command run by hand (README, "Reload a table"). On 2026-10-23 the crime
+tables were dropped for the `record` migration but their history wasn't
+cleared, so Sep 2023–Aug 2026 never loaded again, and nothing flagged it. An
+MCP action `reload_pipe` (behind approval) would make it one step, and a
+check that every `loaded` history row's file is in its table would catch
+the mismatch.
+
+### crime_outcomes files that fail on quotes — `idea`
+
+25 data.police.uk outcomes files fail: DuckDB's sniffer picks no quote
+character, so a quoted location with a comma ("On or near HIGH ROAD,
+ICKENHAM") splits into 11 columns. Setting `quote = '"'` in the pipe's
+options should fix it; the failed files then need their history cleared.
