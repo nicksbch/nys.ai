@@ -149,9 +149,11 @@ MCP action `reload_pipe` (behind approval) would make it one step, and a
 check that every `loaded` history row's file is in its table would catch
 the mismatch.
 
-### crime_outcomes files that fail on quotes — `idea`
+### crime_outcomes files that fail on quotes — `done`
 
-25 data.police.uk outcomes files fail: DuckDB's sniffer picks no quote
-character, so a quoted location with a comma ("On or near HIGH ROAD,
-ICKENHAM") splits into 11 columns. Setting `quote = '"'` in the pipe's
-options should fix it; the failed files then need their history cleared.
+14 data.police.uk outcomes files (25 attempts) failed: DuckDB's sniffer
+picked no quote character, so a quoted location with a comma ("On or near
+HIGH ROAD, ICKENHAM") split into 11 columns. The crime pipes now set
+`quote = '"'` (checked on every failed file, and on files that loaded
+before: same row counts). After deploying duckpipe, `sudo duckpipectl retry
+crime_outcomes` loads them.

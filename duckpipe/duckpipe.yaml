@@ -37,26 +37,28 @@ pipes:
   # uk/crime/extracted/YYYY-MM/YYYY-MM-<force>-<kind>.csv. Each kind has its
   # own columns, so each goes into its own table. The CSVs have a header;
   # normalize_names turns "Crime ID" into crime_id. Kept as text; cast later.
+  # The quote is set: in a file with few quoted fields DuckDB's sniffer finds
+  # none, and a location like "On or near HIGH ROAD, ICKENHAM" splits in two.
   - name: crime_street
     bucket: home
     prefix: uk/crime/extracted/
     pattern: "*-street.csv"
     table: uk.crime_street
-    options: "header = true, all_varchar = true, normalize_names = true"
+    options: "header = true, all_varchar = true, normalize_names = true, quote = '\"'"
 
   - name: crime_outcomes
     bucket: home
     prefix: uk/crime/extracted/
     pattern: "*-outcomes.csv"
     table: uk.crime_outcomes
-    options: "header = true, all_varchar = true, normalize_names = true"
+    options: "header = true, all_varchar = true, normalize_names = true, quote = '\"'"
 
   - name: crime_stop_and_search
     bucket: home
     prefix: uk/crime/extracted/
     pattern: "*-stop-and-search.csv"
     table: uk.crime_stop_and_search
-    options: "header = true, all_varchar = true, normalize_names = true"
+    options: "header = true, all_varchar = true, normalize_names = true, quote = '\"'"
 
   # ONS Postcode Directory (ONSPD_<MON>_<YYYY>/ONSPD_<MON>_<YYYY>_UK.csv,
   # quarterly): every UK postcode, live and terminated, with the areas it
