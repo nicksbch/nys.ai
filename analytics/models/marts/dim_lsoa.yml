@@ -1,0 +1,30 @@
+models:
+  - name: dim_lsoa
+    description: >
+      Every 2021 lower layer super output area (data zone in Scotland, super
+      data zone in Northern Ireland) with the areas it falls in, from the
+      latest ONSPD release. The 48 LSOAs that straddle a 2025 local authority
+      boundary (and the few that straddle a police force area or region) get
+      the one most of their postcodes are in.
+    columns:
+      - name: lsoa_code
+        description: 2021 lower layer super output area (E01, W01, S01, N21)
+        tests: [not_null, unique]
+      - name: msoa_code
+        description: 2021 middle layer super output area
+      - name: local_authority_code
+        description: Local authority district / unitary authority (2025 boundaries)
+        tests: [not_null]
+      - name: police_force_area_code
+        description: Police force area (2023 boundaries); null in Northern Ireland
+      - name: region_code
+        description: Region (England only)
+      - name: country_code
+        description: Country (E92 England, W92 Wales, S92 Scotland, N92 Northern Ireland)
+        tests: [not_null]
+      - name: postcodes
+        description: Postcodes in the LSOA, live and terminated
+        tests: [not_null]
+      - name: live_postcodes
+        description: Live postcodes in the LSOA
+        tests: [not_null]

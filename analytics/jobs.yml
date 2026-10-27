@@ -7,9 +7,9 @@ jobs:
         type: ok
         data: {table: lake.uk.price_paid}
 
-  # Test the crime staging views after duckpipe loads new data.police.uk files
-  # (views read the new rows by themselves). A new archive brings hundreds of
-  # files, so wait for the loads to go quiet.
+  # Test the crime staging views and rebuild fct_crime_street after duckpipe
+  # loads new data.police.uk files. A new archive brings hundreds of files, so
+  # wait for the loads to go quiet.
   - name: crime
     select: source:uk.crime_street+ source:uk.crime_outcomes+ source:uk.crime_stop_and_search+
     on:
@@ -25,8 +25,8 @@ jobs:
     debounce: 5m
     max_wait: 1h
 
-  # Test stg_onspd after duckpipe loads a new ONSPD release (the view reads
-  # the new rows by itself).
+  # Test stg_onspd and rebuild the geography dimensions, and fct_crime_street's
+  # LSOA mapping, after duckpipe loads a new ONSPD release.
   - name: onspd
     select: source:uk.onspd+
     on:

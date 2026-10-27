@@ -1,0 +1,46 @@
+models:
+  - name: dim_geography
+    description: >
+      Every UK postcode (latest ONSPD release), live and terminated, with its
+      coordinates and the areas it falls in. Area codes are ONS GSS codes,
+      null where the postcode is in no such area (e.g. Channel Islands, Isle
+      of Man). LSOAs are 2021 LSOAs in England and Wales, data zones in
+      Scotland, super data zones in Northern Ireland.
+    columns:
+      - name: postcode
+        description: Postcode, one space between outward and inward code (AB1 0AA)
+        tests: [not_null, unique]
+      - name: is_live
+        description: The postcode is in use (not terminated)
+        tests: [not_null]
+      - name: introduced_month
+        description: Month the postcode was introduced
+      - name: terminated_month
+        description: Month the postcode was terminated; null if live
+      - name: latitude
+        description: Latitude (WGS84); null without a grid reference
+      - name: longitude
+        description: Longitude (WGS84); null without a grid reference
+      - name: oa_code
+        description: 2021 census output area
+      - name: lsoa_code
+        description: 2021 lower layer super output area
+        tests:
+          - relationships: {to: "ref('dim_lsoa')", field: lsoa_code}
+      - name: msoa_code
+        description: 2021 middle layer super output area
+      - name: ward_code
+        description: Electoral ward (2025 boundaries)
+      - name: local_authority_code
+        description: Local authority district / unitary authority (2025 boundaries)
+      - name: constituency_code
+        description: Westminster parliamentary constituency (2024 boundaries)
+      - name: police_force_area_code
+        description: Police force area (2023 boundaries)
+      - name: region_code
+        description: Region (England only)
+      - name: country_code
+        description: Country (E92 England, W92 Wales, S92 Scotland, N92 Northern Ireland, L93 Channel Islands, M83 Isle of Man)
+        tests: [not_null]
+      - name: imd_rank
+        description: Index of multiple deprivation rank of the postcode's LSOA, within its own country (1 = most deprived)

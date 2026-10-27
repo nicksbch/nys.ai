@@ -1,0 +1,36 @@
+models:
+  - name: fct_crime_street
+    description: >
+      Every street-level crime and anti-social behaviour incident published
+      by data.police.uk (England, Wales and Northern Ireland), by month. Join
+      lsoa_code to dim_lsoa for its local authority, police force area and
+      region. Crimes reported against a 2011 LSOA that was split in 2021 are
+      put in the 2021 LSOA holding most of it (is_lsoa_approximate).
+    columns:
+      - name: crime_id
+        description: Police.uk crime ID; null for anti-social behaviour, and not unique
+      - name: month
+        description: First day of the month the crime was recorded
+        tests: [not_null]
+      - name: crime_type
+        tests: [not_null]
+      - name: last_outcome_category
+        description: Latest outcome, as of the month published
+      - name: reported_by
+        description: Force that provided the data
+      - name: falls_within
+        description: Force whose area the crime falls in
+        tests: [not_null]
+      - name: lsoa_code
+        description: 2021 LSOA; null when police.uk gives no location
+        tests:
+          - relationships: {to: "ref('dim_lsoa')", field: lsoa_code, severity: warn}
+      - name: reported_lsoa_code
+        description: LSOA as police.uk published it (2011 LSOAs until mid-2023)
+      - name: is_lsoa_approximate
+        description: The 2011 LSOA reported was split in 2021, so lsoa_code is the part holding most of its postcodes
+        tests: [not_null]
+      - name: latitude
+        description: Latitude (WGS84) of the anonymised point police.uk publishes
+      - name: longitude
+        description: Longitude (WGS84) of the anonymised point police.uk publishes

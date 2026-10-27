@@ -1,0 +1,32 @@
+models:
+  - name: fct_price_paid
+    description: >
+      Every HM Land Registry residential sale in England and Wales since 1995,
+      as it stands now (changes applied, deletions dropped). Join postcode to
+      dim_geography for its LSOA, local authority, police force area and
+      region.
+    columns:
+      - name: transaction_id
+        tests: [not_null, unique]
+      - name: date_of_transfer
+        description: Date the sale completed
+        tests: [not_null]
+      - name: month
+        description: First day of the month the sale completed
+        tests: [not_null]
+      - name: price
+        description: Price paid, in GBP
+        tests: [not_null]
+      - name: postcode
+        description: Postcode of the property; null when Land Registry has none
+        tests:
+          # About 2,000 sales have a postcode ONSPD doesn't know.
+          - relationships: {to: "ref('dim_geography')", field: postcode, severity: warn}
+      - name: property_type
+        description: D detached, S semi-detached, T terraced, F flat or maisonette, O other
+      - name: is_new_build
+        description: A newly built property
+      - name: duration
+        description: F freehold, L leasehold, U unknown
+      - name: ppd_category_type
+        description: A standard sale; B repossession, buy-to-let or sale to a company

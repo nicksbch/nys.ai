@@ -35,3 +35,162 @@ price_paid_monthly:
       description: >-
         Average price paid, in GBP. There is no median measure: the mart's
         monthly medians can't be combined into a median of a larger group.
+
+# Geography: the levels the facts below share, so prices and crime can be
+# compared by the same areas. Area codes are ONS GSS codes (no names yet).
+geography:
+  table: dim_geography
+  description: >-
+    Every UK postcode (latest ONS Postcode Directory), live and terminated,
+    with the areas it falls in.
+  dimensions:
+    postcode:
+      expr: _.postcode
+      description: Postcode, one space between outward and inward code (AB1 0AA)
+    is_live:
+      expr: _.is_live
+      description: The postcode is in use (not terminated)
+    lsoa_code:
+      expr: _.lsoa_code
+      description: 2021 lower layer super output area (E01…, W01…; S01 data zone, N21 super data zone)
+    msoa_code:
+      expr: _.msoa_code
+      description: 2021 middle layer super output area
+    ward_code:
+      expr: _.ward_code
+      description: Electoral ward, 2025 boundaries (E05…, W05…)
+    local_authority_code:
+      expr: _.local_authority_code
+      description: Local authority district, 2025 boundaries (e.g. E09000033 Westminster)
+    constituency_code:
+      expr: _.constituency_code
+      description: Westminster parliamentary constituency, 2024 boundaries
+    police_force_area_code:
+      expr: _.police_force_area_code
+      description: Police force area, 2023 boundaries (E23…, W15…)
+    region_code:
+      expr: _.region_code
+      description: Region of England (E12…)
+    country_code:
+      expr: _.country_code
+      description: "E92000001 England, W92000004 Wales, S92000003 Scotland, N92000002 Northern Ireland"
+    imd_rank:
+      expr: _.imd_rank
+      description: Index of multiple deprivation rank of the postcode's LSOA, within its country (1 = most deprived)
+  measures:
+    postcodes:
+      expr: _.count()
+      description: Number of postcodes
+
+lsoa:
+  table: dim_lsoa
+  description: >-
+    Every 2021 lower layer super output area (about 1,500 residents) with the
+    areas it falls in. The level crime data has.
+  dimensions:
+    lsoa_code:
+      expr: _.lsoa_code
+      description: 2021 lower layer super output area (E01…, W01…; S01 data zone, N21 super data zone)
+    msoa_code:
+      expr: _.msoa_code
+      description: 2021 middle layer super output area
+    local_authority_code:
+      expr: _.local_authority_code
+      description: Local authority district, 2025 boundaries (e.g. E09000033 Westminster)
+    police_force_area_code:
+      expr: _.police_force_area_code
+      description: Police force area, 2023 boundaries (E23…, W15…)
+    region_code:
+      expr: _.region_code
+      description: Region of England (E12…)
+    country_code:
+      expr: _.country_code
+      description: "E92000001 England, W92000004 Wales, S92000003 Scotland, N92000002 Northern Ireland"
+  measures:
+    lsoas:
+      expr: _.count()
+      description: Number of LSOAs
+    live_postcodes:
+      expr: _.live_postcodes.sum()
+      description: Number of live postcodes
+
+price_paid:
+  table: fct_price_paid
+  description: >-
+    Every HM Land Registry residential sale in England and Wales since 1995,
+    by postcode. Group by geography.* (postcode, LSOA, ward, local authority,
+    police force area, region) to compare with crime by the same areas.
+  joins:
+    geography:
+      model: geography
+      type: one
+      left_on: postcode
+      right_on: postcode
+  dimensions:
+    month:
+      expr: _.month
+      description: First day of the month the sale completed
+      is_time_dimension: true
+      smallest_time_grain: TIME_GRAIN_MONTH
+    property_type:
+      expr: _.property_type
+      description: "D detached, S semi-detached, T terraced, F flat or maisonette, O other"
+    is_new_build:
+      expr: _.is_new_build
+      description: A newly built property
+    duration:
+      expr: _.duration
+      description: "F freehold, L leasehold, U unknown"
+    ppd_category_type:
+      expr: _.ppd_category_type
+      description: "A standard sale; B repossession, buy-to-let or sale to a company. Filter on A for market prices"
+  measures:
+    sales:
+      expr: _.count()
+      description: Number of sales
+    total_value:
+      expr: _.price.sum()
+      description: Total paid for all sales, in GBP
+    median_price:
+      expr: _.price.median()
+      description: Median price paid, in GBP
+  calculated_measures:
+    avg_price:
+      expr: _.total_value / _.sales
+      description: Average price paid, in GBP
+
+crime:
+  table: fct_crime_street
+  description: >-
+    Every street-level crime and anti-social behaviour incident from
+    data.police.uk (England, Wales, Northern Ireland), by month and 2021
+    LSOA; there is no postcode. Group by lsoa.* (LSOA, local authority,
+    police force area, region) to compare with prices by the same areas.
+  joins:
+    lsoa:
+      model: lsoa
+      type: one
+      left_on: lsoa_code
+      right_on: lsoa_code
+  dimensions:
+    month:
+      expr: _.month
+      description: First day of the month the crime was recorded
+      is_time_dimension: true
+      smallest_time_grain: TIME_GRAIN_MONTH
+    crime_type:
+      expr: _.crime_type
+      description: Police.uk category, e.g. Burglary, Anti-social behaviour, Violence and sexual offences
+    last_outcome_category:
+      expr: _.last_outcome_category
+      description: Latest outcome, as of the month published
+    falls_within:
+      expr: _.falls_within
+      description: Name of the force whose area the crime is in (e.g. Metropolitan Police Service)
+    is_lsoa_approximate:
+      expr: _.is_lsoa_approximate
+      description: Reported against a 2011 LSOA split in 2021, so put in the part holding most of it
+  measures:
+    crimes:
+      expr: _.count()
+      description: Number of crimes and anti-social behaviour incidents
