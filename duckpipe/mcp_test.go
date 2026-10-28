@@ -107,6 +107,7 @@ func TestMCPHistory(t *testing.T) {
 	e.duck = &duck{bin: bin, setup: []string{`CREATE TABLE h AS SELECT * FROM (VALUES
 		('orders', 'home', 'raw/orders/a.csv', 'loaded', 10, NULL, TIMESTAMPTZ '2026-10-20 10:00:00+00', 'lake.raw.orders', 100),
 		('orders', 'home', 'raw/orders/b.csv', 'failed', 0, 'bad row', TIMESTAMPTZ '2026-10-21 10:00:00+00', NULL, 50),
+		('orders', 'home', 'raw/orders/c.csv', 'failed', 0, 'fixed since', TIMESTAMPTZ '2026-10-19 10:00:00+00', NULL, 60),
 		('orders', 'home', 'raw/orders/c.csv', 'loaded', 5, NULL, TIMESTAMPTZ '2026-10-22 10:00:00+00', 'lake.raw.orders', 60),
 		('crime', 'home', 'uk/x.csv', 'loaded', 7, NULL, TIMESTAMPTZ '2026-10-23 10:00:00+00', 'lake.raw.crime', 70)
 	) AS t(pipe, bucket, key, status, rows, error, loaded_at, target, size)`}}
@@ -126,9 +127,30 @@ func TestMCPHistory(t *testing.T) {
 	if len(v.Stats) != 2 || v.Stats[0].Pipe != "orders" || v.Stats[0].Files != 2 || v.Stats[0].Failed != 1 {
 		t.Errorf("stats = %+v", v.Stats)
 	}
+	// The history keeps every failed attempt; the failed files are only
+	// those whose latest attempt failed.
+	if len(v.FailedFiles) != 1 || v.FailedFiles[0].File != "s3://home/raw/orders/b.csv" || v.FailedFiles[0].Error != "bad row" ||
+		v.FailedFiles[0].Pipe != "orders" || v.FailedFiles[0].At == "" {
+		t.Errorf("failed files = %+v", v.FailedFiles)
+	}
 	call(t, s, "load_history", map[string]any{"status": "failed"}, &v)
-	if len(v.History) != 1 || v.History[0].Error != "bad row" || v.Limit != defaultHistory {
+	if len(v.History) != 2 || v.History[0].Error != "bad row" || v.Limit != defaultHistory {
 		t.Errorf("failed history = %+v", v)
+	}
+
+	// The page filters by status the same way.
+	get := func(q string) (int, historyView) {
+		rec := httptest.NewRecorder()
+		e.apiHistory(rec, httptest.NewRequest("GET", "/api/history"+q, nil))
+		var v historyView
+		json.Unmarshal(rec.Body.Bytes(), &v)
+		return rec.Code, v
+	}
+	if code, v := get("?pipe=orders&status=failed"); code != 200 || len(v.History) != 2 || len(v.FailedFiles) != 1 {
+		t.Errorf("api/history failed: %d %+v", code, v)
+	}
+	if code, _ := get("?status=ok"); code != http.StatusBadRequest {
+		t.Errorf("api/history status=ok: %d", code)
 	}
 }
 

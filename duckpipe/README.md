@@ -267,9 +267,14 @@ login), also linked from [atlas](../atlas)'s Services tab:
 - **Pipes:** per pipe, the files the last poll found that aren't loaded yet
   (waiting), the files and rows loaded, the failed files, the last load, and
   the last poll, with its error if it failed.
+- **Failed files:** shown only when a file is failing: every file whose
+  latest attempt failed (the newest 50), with its pipe and error. A pipe's
+  Failed count links here. Files that failed once and loaded later aren't
+  listed.
 - **History:** the newest 500 rows of the load history, for all pipes or
-  one, with the error of each failed file. The rest:
-  `sudo duckpipectl history [pipe]`.
+  one, loaded and failed or one of them, with the error of each failed
+  file. Its failed rows are every failed attempt, also of files fixed
+  since. The rest: `sudo duckpipectl history [pipe]`.
 - **Stop all:** stops the load under way right away (its `duckdb` process is
   killed, so its transaction is rolled back and nothing of it is kept) and
   stops polling until **Resume**. The stopped files aren't marked failed:
@@ -290,7 +295,7 @@ through mcp-hub as `duckpipe__*`; the `nexus` profile has all four.
 | Tool           | Read-only | What it does                                                          |
 |----------------|-----------|-----------------------------------------------------------------------|
 | `list_pipes`   | yes       | The page's state: loading, idle, stopped…, the batch being loaded, each pipe's last poll, error and files waiting |
-| `load_history` | yes       | `{pipe?, status?, limit?}`: each pipe's totals and the newest history rows (20 by default, at most 500), by pipe and by `loaded` or `failed` |
+| `load_history` | yes       | `{pipe?, status?, limit?}`: each pipe's totals, the failed files (as on the page) and the newest history rows (20 by default, at most 500), by pipe and by `loaded` or `failed` |
 | `stop_all`     | no        | Stop all, as on the page                                              |
 | `resume`       | no        | Resume, as on the page                                                |
 

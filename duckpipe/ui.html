@@ -76,6 +76,8 @@ td.path { overflow-wrap: anywhere; min-width: 160px; }
 .st-failed { color: var(--critical-text); }
 .st-waiting { color: var(--warning-text); }
 .err { color: var(--critical-text); font-size: 12px; overflow-wrap: anywhere; }
+a.st-failed { text-decoration: none; }
+a.st-failed:hover { text-decoration: underline; }
 @media (max-width: 700px) { .opt { display: none; } }
 </style>
 </head>
@@ -114,6 +116,17 @@ td.path { overflow-wrap: anywhere; min-width: 160px; }
     <div class="bar"><div></div></div>
   </section>
 
+  <section class="card banner" id="failed-card" hidden>
+    <div class="card-head">
+      <h2>Failed files</h2>
+      <span class="sub" id="failed-note"></span>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>When</th><th>Pipe</th><th>File</th></tr></thead>
+      <tbody id="failed"></tbody>
+    </table></div>
+  </section>
+
   <section class="card">
     <div class="card-head">
       <h2>Pipes</h2>
@@ -129,6 +142,7 @@ td.path { overflow-wrap: anywhere; min-width: 160px; }
     <div class="card-head">
       <h2>History</h2>
       <select id="history-pipe"><option value="">all pipes</option></select>
+      <select id="history-status"><option value="">loaded and failed</option><option value="loaded">loaded only</option><option value="failed">failed only</option></select>
       <button id="history-refresh">Refresh</button>
       <span class="sub" id="history-note"></span>
     </div>
@@ -236,16 +250,34 @@ function renderPipes() {
       el('td', {class: 'path opt'}, el('div', {class: 'mono'}, p.source), el('div', {class: 'mono sub'}, '→ ' + p.table)),
       el('td', {class: 'num' + (p.waiting ? ' st-waiting' : '')}, polled ? (p.waiting ? fmtNum(p.waiting) + ' · ' + fmtBytes(p.waiting_bytes) : '0') : '–'),
       n(st && st.files), n(st && st.rows),
-      el('td', {class: 'num' + (st && st.failed ? ' st-failed' : '')}, st ? fmtNum(st.failed) : '–'),
+      el('td', {class: 'num' + (st && st.failed ? ' st-failed' : '')}, !st ? '–'
+        : st.failed ? el('a', {href: '#failed-card', class: 'st-failed', title: 'Show the failed files'}, fmtNum(st.failed)) : '0'),
       st && st.last ? when(utc(st.last)) : el('td', {}, '–'),
       el('td', {}, polled ? fmtAge(p.polled_at) : 'not yet', p.error ? el('div', {class: 'err'}, p.error) : null));
   }));
 }
 
+// renderFailed lists the files whose latest attempt failed: what is failing
+// now, unlike the history's failed rows, which include files fixed since.
+function renderFailed() {
+  if (!hist) return;
+  const f = hist.failed_files, total = hist.stats.reduce((n, x) => n + x.failed, 0);
+  $('failed-card').hidden = !f.length;
+  $('failed-note').textContent = (total > f.length ? 'Newest ' + f.length + ' of ' + fmtNum(total) + '. ' : '')
+    + 'Their latest attempt failed. Fix the file (upload a new version) or the pipe, then: sudo duckpipectl retry [pipe].';
+  $('failed').replaceChildren(...f.map(x => el('tr', {},
+    when(utc(x.at)),
+    el('td', {class: 'nowrap'}, x.pipe),
+    el('td', {class: 'path'}, el('div', {class: 'mono'}, x.file), el('div', {class: 'err'}, x.error)))));
+}
+
 function renderHistory() {
   if (!hist) return;
+  const status = $('history-status').value;
   $('history-note').textContent = hist.history.length >= hist.limit
-    ? 'Newest ' + hist.limit + '. The rest: sudo duckpipectl history [pipe].' : 'Every file loaded or failed, newest first.';
+    ? 'Newest ' + hist.limit + '. The rest: sudo duckpipectl history [pipe].'
+    : status === 'failed' ? 'Every failed attempt, newest first, also of files that loaded later.'
+    : status === 'loaded' ? 'Every file loaded, newest first.' : 'Every file loaded or failed, newest first.';
   const rows = hist.history.map(h => el('tr', {},
     when(utc(h.at)),
     el('td', {class: 'nowrap'}, h.pipe),
@@ -255,7 +287,7 @@ function renderHistory() {
     el('td', {class: 'num'}, fmtNum(h.rows)),
     el('td', {class: 'num opt'}, fmtBytes(h.size))));
   $('history').replaceChildren(...(rows.length ? rows
-    : [el('tr', {}, el('td', {colspan: 7, class: 'empty'}, 'Nothing loaded yet.'))]));
+    : [el('tr', {}, el('td', {colspan: 7, class: 'empty'}, status ? 'Nothing ' + status + '.' : 'Nothing loaded yet.'))]));
 }
 
 function renderPipeFilter(pipes) {
@@ -301,9 +333,12 @@ async function loadHistory() {
   histBusy = true;
   $('history-refresh').disabled = true;
   try {
-    const pipe = $('history-pipe').value;
-    hist = await api('api/history' + (pipe ? '?pipe=' + encodeURIComponent(pipe) : ''));
+    const q = new URLSearchParams();
+    if ($('history-pipe').value) q.set('pipe', $('history-pipe').value);
+    if ($('history-status').value) q.set('status', $('history-status').value);
+    hist = await api('api/history' + (q.size ? '?' + q : ''));
     renderPipes();
+    renderFailed();
     renderHistory();
     $('history-error').hidden = true;
   } catch (e) {
@@ -317,6 +352,7 @@ async function loadHistory() {
 
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { poll(); loadHistory(); } });
 $('history-pipe').onchange = loadHistory;
+$('history-status').onchange = loadHistory;
 $('history-refresh').onclick = loadHistory;
 $('stop').onclick = () => {
   if (!confirm('Stop all loading?\nThe load under way is stopped and rolled back, and nothing is polled until you press Resume.')) return;

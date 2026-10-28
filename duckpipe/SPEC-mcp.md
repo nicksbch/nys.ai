@@ -10,7 +10,7 @@ loading and what they loaded, and stop or resume loading, through
 | Tool | Read-only | What it does |
 |------|-----------|--------------|
 | `list_pipes` | yes | `{}` → what the page polls (`GET /api/state`): the state (`loading`, `maintenance`, `idle`, `stopping`, `stopped`), the batch being loaded, and each pipe's source, table, last poll and its error, and files still to load. |
-| `load_history` | yes | `{"pipe"?, "status"?, "limit"?}` → each pipe's totals (files, rows, failed, last load) and the newest load history rows (`GET /api/history`), filtered by pipe and by `loaded` or `failed`. 20 rows by default, at most 500. |
+| `load_history` | yes | `{"pipe"?, "status"?, "limit"?}` → each pipe's totals (files, rows, failed, last load), the files whose latest attempt failed (newest 50) and the newest load history rows (`GET /api/history`), filtered by pipe and by `loaded` or `failed`. 20 rows by default, at most 500. |
 | `stop_all` | no | `{}` → "Stop all" (`POST /api/stop`): the load under way is cancelled and rolled back, and polling pauses until `resume`. Its files load again after `resume`. Returns `{"state"}`. |
 | `resume` | no | `{}` → "Resume" (`POST /api/resume`): polling starts again, with a poll right away. Returns `{"state"}`. |
 
@@ -22,7 +22,7 @@ loading and what they loaded, and stop or resume loading, through
   does. It gets 50 s, inside the hub's 60 s call timeout; a slower answer
   is a tool error ("the lake didn't answer in 50 s").
 - `status` filtering is new: `historyRows` gets a status argument
-  (`WHERE status = ?`). The page doesn't use it.
+  (`WHERE status = ?`). The page uses it too (`?status=`).
 - `stop_all`'s description says what stopping costs: the batch in progress
   is rolled back and loaded again later.
 

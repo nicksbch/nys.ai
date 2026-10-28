@@ -550,9 +550,12 @@ func (e *engine) seen(ctx context.Context) (map[string]map[string]bool, error) {
 	return done, nil
 }
 
+// failedLimit is how many failed files stats lists at most.
+const failedLimit = 50
+
 // stats returns, per pipe, the files and rows loaded, the files whose latest
-// attempt failed and the last load (UTC, "2006-01-02 15:04:05"), and the 50
-// newest failed files.
+// attempt failed and the last load (UTC, "2006-01-02 15:04:05"), and the
+// newest failedLimit failed files.
 func (e *engine) stats(ctx context.Context) (map[string]row, []row, error) {
 	// A file counts as failed only if its latest attempt failed; a fixed file
 	// that loaded later doesn't.
@@ -565,9 +568,11 @@ func (e *engine) stats(ctx context.Context) (map[string]row, []row, error) {
 			count(*) FILTER (status = 'failed' AND latest) AS failed,
 			strftime(max(loaded_at) FILTER (status = 'loaded'), '%Y-%m-%d %H:%M:%S') AS last
 		FROM `+latest+` GROUP BY pipe`,
-		`SELECT pipe, key, error FROM `+latest+`
+		`SELECT strftime(loaded_at, '%Y-%m-%d %H:%M:%S') AS at, pipe, key,
+			's3://' || bucket || '/' || key AS file, error
+		FROM `+latest+`
 		WHERE latest AND status = 'failed'
-		ORDER BY loaded_at DESC LIMIT 50`,
+		ORDER BY loaded_at DESC, key LIMIT `+fmt.Sprint(failedLimit),
 	)
 	if err != nil {
 		return nil, nil, err

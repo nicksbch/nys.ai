@@ -11,6 +11,7 @@ import (
 	"crypto/subtle"
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -240,9 +241,20 @@ func (e *engine) stateView() stateView {
 // historyView is read from the lake, by running duckdb, so the page asks for
 // it less often.
 type historyView struct {
-	Stats   []statView `json:"stats"`
-	History []histView `json:"history"` // newest first, at most Limit
-	Limit   int        `json:"limit"`
+	Stats []statView `json:"stats"`
+	// The files whose latest attempt failed, every pipe's, newest first, at
+	// most failedLimit: what is failing now. History also has earlier
+	// attempts that failed and loaded later.
+	FailedFiles []failView `json:"failed_files"`
+	History     []histView `json:"history"` // newest first, at most Limit
+	Limit       int        `json:"limit"`
+}
+
+type failView struct {
+	At    string `json:"at"` // UTC, "2006-01-02 15:04:05"
+	Pipe  string `json:"pipe"`
+	File  string `json:"file"`
+	Error string `json:"error"`
 }
 
 type statView struct {
@@ -264,12 +276,17 @@ type histView struct {
 	Error  string `json:"error,omitempty"`
 }
 
-// apiHistory returns each pipe's totals and the newest history rows,
-// optionally for one pipe (?pipe=).
+// apiHistory returns each pipe's totals, the failed files and the newest
+// history rows, optionally for one pipe (?pipe=) and one status (?status=).
 func (e *engine) apiHistory(w http.ResponseWriter, r *http.Request) {
+	status := r.URL.Query().Get("status")
+	if status != "" && status != "loaded" && status != "failed" {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("status is loaded or failed, not %q", status))
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), time.Minute)
 	defer cancel()
-	v, err := e.historyView(ctx, r.URL.Query().Get("pipe"), "", historyLimit)
+	v, err := e.historyView(ctx, r.URL.Query().Get("pipe"), status, historyLimit)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
@@ -280,7 +297,7 @@ func (e *engine) apiHistory(w http.ResponseWriter, r *http.Request) {
 // historyView is each pipe's totals and the newest limit history rows, for
 // one pipe and one status if they aren't empty.
 func (e *engine) historyView(ctx context.Context, pipe, status string, limit int) (historyView, error) {
-	stats, _, err := e.stats(ctx)
+	stats, failed, err := e.stats(ctx)
 	if err != nil {
 		return historyView{}, err
 	}
@@ -288,11 +305,15 @@ func (e *engine) historyView(ctx context.Context, pipe, status string, limit int
 	if err != nil {
 		return historyView{}, err
 	}
-	v := historyView{Stats: []statView{}, History: []histView{}, Limit: limit}
+	v := historyView{Stats: []statView{}, FailedFiles: []failView{}, History: []histView{}, Limit: limit}
 	for _, p := range e.cfg.Pipes {
 		s := stats[p.Name]
 		v.Stats = append(v.Stats, statView{Pipe: p.Name, Files: s.int("files"), Rows: s.int("rows"),
 			Failed: s.int("failed"), Last: s.str("last")})
+	}
+	for _, f := range failed {
+		v.FailedFiles = append(v.FailedFiles, failView{At: f.str("at"), Pipe: f.str("pipe"), File: f.str("file"),
+			Error: f.str("error")})
 	}
 	for _, h := range rows {
 		v.History = append(v.History, histView{At: h.str("at"), Pipe: h.str("pipe"), File: h.str("file"),
