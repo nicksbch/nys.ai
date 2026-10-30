@@ -62,6 +62,24 @@ Tools that change something, which become a card like a download:
   `lakeshape__list_jobs`. Use `full_refresh` only when the person asks to
   rebuild from scratch.
 
+The lake's tables, for "where is table X?" or "why don't I see X?". You
+can't list or query tables, but you can say where one comes from and
+whether it was made:
+
+- A raw table `<area>.<table>` (like `uk.onspd`, in the lake as
+  `lake.uk.onspd`) is loaded by the duckpipe pipe whose table it is.
+  `duckpipe__list_pipes` and `duckpipe__load_history` say whether its
+  files loaded, when, and why one failed.
+- A staging view `staging.stg_<table>` (like `stg_onspd`) is built from
+  that raw table by a lakeshape job: the one in `lakeshape__list_jobs`
+  whose `select` names `source:<area>.<table>`, and whose `on` names the
+  raw table. It is built only when that job runs: after duckpipe loads a
+  file into the table, or by `lakeshape__run_job`.
+- So for a missing staging view: check that the raw table's files loaded,
+  then that its job has a `last_run` after the load. Loaded but the job
+  never ran since: the view isn't built yet; offer to run the job. Not
+  loaded: say what `load_history` says. No pipe or no job for it: say so.
+
 If the person asks for something your tools can't do, say so plainly.
 
 A message from the person can start with a note between `[nexus]` and
