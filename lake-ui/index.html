@@ -78,6 +78,11 @@ th { position: sticky; top: 0; background: var(--bg); font-weight: 600; z-index:
 th small { display: block; font-weight: 400; color: var(--muted); font-family: var(--mono); font-size: 11px; }
 th.rn, td.rn { color: var(--muted); text-align: right; font-size: 11px; position: sticky; left: 0; background: var(--bg); }
 th.rn { z-index: 2; }
+th .rz { position: absolute; top: 0; right: 0; width: 6px; height: 100%; cursor: col-resize; }
+th .rz:hover, th .rz.on { background: var(--accent); }
+/* After the first drag the widths are the ones set by hand, so cells can be narrower than their text. */
+table.fixed { table-layout: fixed; }
+table.fixed th, table.fixed td { max-width: none; overflow: hidden; text-overflow: ellipsis; }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 td .null { color: var(--muted); font-style: italic; }
 tbody tr:hover td { background: var(--hover); }
@@ -213,14 +218,14 @@ function render(res) {
     ` · ${res.ms.toLocaleString()} ms`;
   const num = res.columns.map(c => NUMERIC.test(c.type));
   const head = el('tr', {}, el('th', { class: 'rn' }, '#'),
-    ...res.columns.map((c, i) => el('th', { class: num[i] ? 'num' : '' }, c.name, el('small', {}, c.type))));
+    ...res.columns.map((c, i) => el('th', { class: num[i] ? 'num' : '' }, c.name, el('small', {}, c.type), resizer())));
   const body = document.createDocumentFragment();
   res.rows.forEach((row, r) => {
     const tr = el('tr', {}, el('td', { class: 'rn' }, String(r + 1)));
     row.forEach((v, i) => {
       const td = el('td', num[i] ? { class: 'num' } : {});
       if (v === null) td.append(el('span', { class: 'null' }, 'NULL'));
-      else { const s = typeof v === 'object' ? JSON.stringify(v) : String(v); td.textContent = s; if (s.length > 60) td.title = s; }
+      else { const s = typeof v === 'object' ? JSON.stringify(v) : String(v); td.textContent = s; }
       tr.append(td);
     });
     body.append(tr);
@@ -228,6 +233,33 @@ function render(res) {
   const table = el('table', {}, el('thead', {}, head), el('tbody', {}, body));
   resultEl.replaceChildren(n ? table : el('div', {}, table, el('div', { class: 'empty' }, 'No rows')));
   resultEl.scrollTo(0, 0);
+}
+
+// Drag handle on a column header's right edge. The first drag pins every
+// column at its current width and switches the table to fixed layout.
+function resizer() {
+  const h = el('div', { class: 'rz' });
+  h.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    const th = h.parentElement, table = th.closest('table');
+    if (!table.classList.contains('fixed')) {
+      const ths = [...th.parentElement.cells], ws = ths.map(c => c.getBoundingClientRect().width);
+      ths.forEach((c, i) => c.style.width = ws[i] + 'px');
+      table.style.width = ws.reduce((a, b) => a + b, 0) + 'px';
+      table.classList.add('fixed');
+    }
+    const x0 = e.clientX, w0 = parseFloat(th.style.width), t0 = parseFloat(table.style.width);
+    h.setPointerCapture(e.pointerId);
+    h.classList.add('on');
+    const move = e => {
+      const w = Math.max(40, w0 + e.clientX - x0);
+      th.style.width = w + 'px';
+      table.style.width = t0 + w - w0 + 'px';
+    };
+    h.addEventListener('pointermove', move);
+    h.addEventListener('pointerup', () => { h.removeEventListener('pointermove', move); h.classList.remove('on'); }, { once: true });
+  });
+  return h;
 }
 
 async function loadTables() {
@@ -399,6 +431,11 @@ $('#csv').addEventListener('click', () => run('csv'));
 $('#cancel').addEventListener('click', () => ctrl && ctrl.abort());
 $('#reload').addEventListener('click', loadTables);
 $('#filter').addEventListener('input', drawTree);
+// Cut-off cells show their full value on hover.
+resultEl.addEventListener('mouseover', e => {
+  const td = e.target.closest('td');
+  if (td && !td.title && td.scrollWidth > td.clientWidth) td.title = td.textContent;
+});
 if (!/Mac|iPhone|iPad/.test(navigator.platform)) $('#run kbd').textContent = 'Ctrl↵';
 loadTables();
 sqlBox.focus();

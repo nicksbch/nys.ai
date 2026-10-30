@@ -10,7 +10,7 @@ A small web UI to query the DuckLake set up by `../linux-scripts/ducklake-setup.
   names (`o.` after `FROM raw.orders o` too). ↑/↓ to choose, Enter or Tab to
   insert, Esc to close, Ctrl+Space to open it by hand.
 - **Results:** a table with column types, NULLs marked, numbers right-aligned.
-  The first 10,000 rows are shown.
+  The first 10,000 rows are shown. Drag a header's right edge to resize the column.
 - **Download CSV:** every row of the query, streamed straight from DuckDB.
 - **Tables:** the lake's schemas, tables and columns in a sidebar, with a
   filter. "query" on a table runs `SELECT * FROM <table> LIMIT 100`.
