@@ -70,3 +70,26 @@ pipes:
     pattern: "ONSPD_*_UK.csv"
     table: uk.onspd
     options: "header = true, all_varchar = true, normalize_names = true"
+
+  # ONS LSOA (2021) names and codes, one file per country set
+  # (LSOA_name_mapping/LSOA (2021) <kind> names and codes <EW|SC|NI> as at
+  # <MM_YY>.csv, updated rarely): code, name. Each file's header names the
+  # code for its geography (LSOA21CD, Scottish DZ22CD, NI SDZ21CD), so the
+  # columns are named here as ONSPD's lsoa21cd column, which holds all three.
+  # Some names contain commas, so the quote is set. Kept as text.
+  - name: lsoa_names
+    bucket: home
+    prefix: uk/osnpd/LSOA_name_mapping/
+    pattern: "LSOA (2021) *.csv"
+    table: uk.lsoa_names
+    options: "header = true, all_varchar = true, names = ['lsoa21cd', 'lsoa21nm'], quote = '\"'"
+
+  # ONS MSOA (2021) names and codes, as above (MSOA_name_mapping/MSOA (2021)
+  # <kind> names and codes <EW|SC> as at <MM_YY>.csv; Scotland's are IZ22CD):
+  # code, name, named as ONSPD's msoa21cd. No NI file. Kept as text.
+  - name: msoa_names
+    bucket: home
+    prefix: uk/osnpd/MSOA_name_mapping/
+    pattern: "MSOA (2021) *.csv"
+    table: uk.msoa_names
+    options: "header = true, all_varchar = true, names = ['msoa21cd', 'msoa21nm'], quote = '\"'"

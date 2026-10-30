@@ -1,0 +1,16 @@
+models:
+  - name: stg_lsoa_names
+    description: >
+      ONS lower layer super output area (2021) names, one row per area: LSOAs
+      (England and Wales), data zones (Scotland, 2022 boundaries) and super
+      data zones (Northern Ireland). The same areas as ONSPD's lsoa21cd.
+    columns:
+      - name: lsoa21cd
+        description: LSOA code (ONS GSS code; E01, W01, S01, N21...)
+        tests:
+          - not_null
+          - unique
+          - relationships: {to: "ref('stg_onspd')", field: lsoa21cd, severity: warn}
+      - name: lsoa21nm
+        description: LSOA name
+        tests: [not_null]

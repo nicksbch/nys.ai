@@ -33,3 +33,18 @@ jobs:
       - topic: duckpipe.ingest
         type: ok
         data: {table: lake.uk.onspd}
+
+  # Test stg_lsoa_names and stg_msoa_names after duckpipe loads new LSOA or
+  # MSOA name files (the views read new rows by themselves). One file per
+  # country, so wait for the loads to go quiet.
+  - name: area_names
+    select: source:uk.lsoa_names+ source:uk.msoa_names+
+    on:
+      - topic: duckpipe.ingest
+        type: ok
+        data: {table: lake.uk.lsoa_names}
+      - topic: duckpipe.ingest
+        type: ok
+        data: {table: lake.uk.msoa_names}
+    debounce: 5m
+    max_wait: 1h

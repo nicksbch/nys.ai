@@ -1,0 +1,17 @@
+models:
+  - name: stg_msoa_names
+    description: >
+      ONS middle layer super output area (2021) names, one row per area: MSOAs
+      (England and Wales) and intermediate zones (Scotland, 2022
+      boundaries); none in Northern Ireland. The same areas as ONSPD's
+      msoa21cd.
+    columns:
+      - name: msoa21cd
+        description: MSOA code (ONS GSS code; E02, W02, S02...)
+        tests:
+          - not_null
+          - unique
+          - relationships: {to: "ref('stg_onspd')", field: msoa21cd, severity: warn}
+      - name: msoa21nm
+        description: MSOA name
+        tests: [not_null]
