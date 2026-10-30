@@ -48,3 +48,12 @@ jobs:
         data: {table: lake.uk.msoa_names}
     debounce: 5m
     max_wait: 1h
+
+  # Test stg_companies after duckpipe loads a new Companies House release (the
+  # view reads the new file by itself).
+  - name: companies
+    select: source:uk.companies+
+    on:
+      - topic: duckpipe.ingest
+        type: ok
+        data: {table: lake.uk.companies}

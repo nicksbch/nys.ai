@@ -1,0 +1,169 @@
+models:
+  - name: stg_companies
+    description: >
+      Companies House basic company data (latest monthly release): every live
+      company on the UK register (companies, LLPs, limited partnerships,
+      overseas entities...), with its registered office, type, status,
+      accounts and confirmation statement dates, SIC codes and up to ten
+      previous names. Dissolved companies are not in the file.
+    columns:
+      - name: companynumber
+        description: >
+          Company registration number, 8 characters: digits (England and
+          Wales), or a two-letter prefix and digits (SC Scotland, NI Northern
+          Ireland, OC LLP, LP limited partnership, OE overseas entity...)
+        tests: [not_null, unique]
+      - name: companyname
+        description: Registered name
+        tests: [not_null]
+      - name: regaddresscareof
+        description: Registered office, care of
+      - name: regaddresspobox
+        description: Registered office, PO box
+      - name: regaddressaddressline1
+        description: Registered office, first address line
+      - name: regaddressaddressline2
+        description: Registered office, second address line
+      - name: regaddressposttown
+        description: Registered office, post town
+      - name: regaddresscounty
+        description: Registered office, county
+      - name: regaddresscountry
+        description: Registered office, country as entered (ENGLAND, UNITED KINGDOM, WALES...); often null
+      - name: regaddresspostcode
+        description: >
+          Registered office postcode, one space between outward and inward
+          code (AB1 0AA), as entered; overseas and mistyped ones are not UK
+          postcodes
+        tests:
+          - relationships: {to: "ref('stg_onspd')", field: pcds, severity: warn}
+      - name: companycategory
+        description: Company type (Private Limited Company, Limited Liability Partnership...)
+        tests:
+          - not_null
+          - accepted_values:
+              severity: warn
+              values:
+                - Private Limited Company
+                - PRI/LTD BY GUAR/NSC (Private, limited by guarantee, no share capital)
+                - Limited Partnership
+                - Limited Liability Partnership
+                - Community Interest Company
+                - Charitable Incorporated Organisation
+                - "PRI/LBG/NSC (Private, Limited by guarantee, no share capital, use of 'Limited' exemption)"
+                - Overseas Entity
+                - Other company type
+                - Other Company Type
+                - Registered Society
+                - Scottish Charitable Incorporated Organisation
+                - Private Unlimited Company
+                - Private Unlimited
+                - Public Limited Company
+                - Royal Charter Company
+                - Investment Company with Variable Capital
+                - Investment Company with Variable Capital(Umbrella)
+                - Investment Company with Variable Capital (Securities)
+                - United Kingdom Economic Interest Grouping
+                - Scottish Partnership
+                - Industrial and Provident Society
+                - Old Public Company
+                - PRIV LTD SECT. 30 (Private limited company, section 30 of the Companies Act)
+                - United Kingdom Societas
+                - Protected Cell Company
+                - Further Education and Sixth Form College Corps
+                - Converted/Closed
+      - name: companystatus
+        description: Status on the register (Active, Active - Proposal to Strike off, Liquidation...)
+        tests:
+          - not_null
+          - accepted_values:
+              severity: warn
+              values:
+                - Active
+                - Active - Proposal to Strike off
+                - Liquidation
+                - In Administration
+                - Live but Receiver Manager on at least one charge
+                - Voluntary Arrangement
+                - In Administration/Administrative Receiver
+                - RECEIVERSHIP
+                - ADMINISTRATION ORDER
+                - ADMINISTRATIVE RECEIVER
+                - In Administration/Receiver Manager
+                - RECEIVER MANAGER / ADMINISTRATIVE RECEIVER
+                - VOLUNTARY ARRANGEMENT / RECEIVER MANAGER
+                - VOLUNTARY ARRANGEMENT / ADMINISTRATIVE RECEIVER
+      - name: countryoforigin
+        description: Country the company was incorporated in (United Kingdom, or the overseas jurisdiction)
+        tests: [not_null]
+      - name: dissolutiondate
+        description: Date dissolved; null for every company in this file, which holds live ones only
+      - name: incorporationdate
+        description: Date incorporated (or registered)
+        tests: [not_null]
+      - name: accountsaccountrefday
+        description: Day of the accounting reference date (the financial year end)
+      - name: accountsaccountrefmonth
+        description: Month of the accounting reference date (the financial year end)
+      - name: accountsnextduedate
+        description: Date the next accounts are due
+      - name: accountslastmadeupdate
+        description: Date the last filed accounts were made up to
+      - name: accountsaccountcategory
+        description: Type of the last filed accounts (MICRO ENTITY, DORMANT, FULL...), NO ACCOUNTS FILED if none
+        tests:
+          - accepted_values:
+              severity: warn
+              values:
+                - MICRO ENTITY
+                - NO ACCOUNTS FILED
+                - TOTAL EXEMPTION FULL
+                - DORMANT
+                - UNAUDITED ABRIDGED
+                - FULL
+                - SMALL
+                - AUDIT EXEMPTION SUBSIDIARY
+                - GROUP
+                - TOTAL EXEMPTION SMALL
+                - MEDIUM
+                - ACCOUNTS TYPE NOT AVAILABLE
+                - AUDITED ABRIDGED
+                - FILING EXEMPTION SUBSIDIARY
+                - PARTIAL EXEMPTION
+                - INITIAL
+      - name: returnsnextduedate
+        description: Date the next annual return was due (annual returns were replaced by confirmation statements in 2016)
+      - name: returnslastmadeupdate
+        description: Date the last annual return was made up to
+      - name: confstmtnextduedate
+        description: Date the next confirmation statement is due
+      - name: confstmtlastmadeupdate
+        description: Date the last confirmation statement was made up to
+      - name: mortgagesnummortcharges
+        description: Number of charges (mortgages) registered
+      - name: mortgagesnummortoutstanding
+        description: Number of charges outstanding
+      - name: mortgagesnummortpartsatisfied
+        description: Number of charges partly satisfied
+      - name: mortgagesnummortsatisfied
+        description: Number of charges satisfied
+      - name: siccodesictext_1
+        description: >
+          First SIC 2007 activity, "<5-digit code> - <description>" (68209 -
+          Other letting...); null where none was supplied
+      - name: siccodesictext_2
+        description: Second SIC 2007 activity, as siccodesictext_1
+      - name: siccodesictext_3
+        description: Third SIC 2007 activity, as siccodesictext_1
+      - name: siccodesictext_4
+        description: Fourth SIC 2007 activity, as siccodesictext_1
+      - name: limitedpartnershipsnumgenpartners
+        description: Number of general partners (limited partnerships)
+      - name: limitedpartnershipsnumlimpartners
+        description: Number of limited partners (limited partnerships)
+      - name: uri
+        description: The company's linked-data URI (http://business.data.gov.uk/id/company/<number>)
+      - name: previousname_1condate
+        description: Date the company stopped using its most recent previous name (change of name date)
+      - name: previousname_1companyname
+        description: Most recent previous name; previousname_2 to _10 go further back

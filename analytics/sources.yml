@@ -3,4 +3,4 @@
 # _loaded_at.
 sources:
   - name: uk
-    tables: [price_paid, crime_street, crime_outcomes, crime_stop_and_search, onspd, lsoa_names, msoa_names]
+    tables: [price_paid, crime_street, crime_outcomes, crime_stop_and_search, onspd, lsoa_names, msoa_names, companies]

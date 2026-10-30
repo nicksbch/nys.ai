@@ -97,3 +97,16 @@ pipes:
     pattern: "MSOA (2021) *.csv"
     table: uk.msoa_names
     options: "header = true, all_varchar = true, names = ['msoa21cd', 'msoa21nm'], quote = '\"'"
+  # Companies House basic company data, unzipped by preprocessor into
+  # uk/companies-house/extracted/BasicCompanyDataAsOneFile-YYYY-MM-DD.csv
+  # (monthly): every live company on the register, one row each. Each release
+  # is a full snapshot that replaces the last. The CSV has a header, some of
+  # its names with a leading space or a dot (RegAddress.PostCode);
+  # normalize_names turns them into regaddresspostcode. Every field is quoted.
+  # Kept as text; cast later.
+  - name: companies
+    bucket: home
+    prefix: uk/companies-house/extracted/
+    pattern: "BasicCompanyData*.csv"
+    table: uk.companies
+    options: "header = true, all_varchar = true, normalize_names = true, quote = '\"'"

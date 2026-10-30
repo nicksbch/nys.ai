@@ -15,3 +15,11 @@ jobs:
     prefix: uk/crime/
     pattern: "*.zip"
     to: uk/crime/extracted/
+
+  # Companies House basic company data (BasicCompanyDataAsOneFile-YYYY-MM-DD.zip,
+  # monthly): one CSV of the same name, every live company on the register.
+  - name: uk_companies_house
+    bucket: home
+    prefix: uk/companies-house/
+    pattern: "*.zip"
+    to: uk/companies-house/extracted/
