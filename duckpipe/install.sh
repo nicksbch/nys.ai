@@ -223,6 +223,7 @@ duckpipe is running.
   Status  : sudo duckpipectl status
   Retry   : sudo duckpipectl retry [pipe]   (after fixing failed files)
   History : sudo duckpipectl history [pipe]
+  Verify  : sudo duckpipectl verify [pipe]  (files whose table doesn't hold the rows that were loaded)
   Logs    : journalctl -u duckpipe -f
   Poll now: sudo systemctl kill -s HUP duckpipe
 EOF

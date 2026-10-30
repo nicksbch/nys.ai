@@ -52,8 +52,12 @@ type pipe struct {
 	Options string `yaml:"options"`
 	// Most files loaded in one transaction.
 	Batch int `yaml:"batch"`
+	// Count each file's records without DuckDB, and fail the file if its
+	// rows in the table differ (stats.go). Default: true.
+	Stats *bool `yaml:"stats"`
 
-	schema, table string // parsed from Table
+	schema, table string  // parsed from Table
+	csv           csvOpts // how stats.go reads a CSV without DuckDB, from Options
 }
 
 type duration struct{ time.Duration }
@@ -146,9 +150,16 @@ func (c *config) check() error {
 		if p.Batch <= 0 {
 			p.Batch = 50
 		}
+		if p.stats() {
+			if err := p.checkStatsOptions(); err != nil {
+				return fmt.Errorf("pipe %s: %w", p.Name, err)
+			}
+		}
 	}
 	return nil
 }
+
+func (p *pipe) stats() bool { return p.Stats == nil || *p.Stats }
 
 // matches reports whether the pipe should load the object at key.
 func (p *pipe) matches(key string) bool {

@@ -40,8 +40,10 @@ pipes:
     pattern: "*.csv"
     table: raw.orders
     # Extra read_csv options, as SQL. all_varchar keeps every column as text,
-    # so a file can't fail on a type it wasn't expected to have.
-    # options: "delim = ';', header = true, all_varchar = true"
+    # so a file can't fail on a type it wasn't expected to have. header is
+    # required: each file is also counted without DuckDB (see stats below),
+    # so it can't be guessed. Set delim if it isn't a comma.
+    options: "header = true, all_varchar = true"   # e.g. "delim = ';', header = true"
 
   # JSON / NDJSON events; the format comes from the extension (.json, .jsonl,
   # .ndjson, optionally .gz or .zst). Table defaults to main.<name>.
@@ -57,3 +59,6 @@ pipes:
   #   format: parquet
   #   table: raw.trips
   #   batch: 200
+  #   # Every file's records are counted without DuckDB, and a file whose
+  #   # rows in the table differ fails. Default: true.
+  #   stats: false

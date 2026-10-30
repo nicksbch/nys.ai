@@ -22,6 +22,7 @@
 //	duckpipe [-config duckpipe.yaml] status    # files and rows loaded, failures
 //	duckpipe [-config duckpipe.yaml] retry [pipe]  # load failed files again
 //	duckpipe [-config duckpipe.yaml] history [pipe] # every file loaded or failed, newest first
+//	duckpipe [-config duckpipe.yaml] verify [pipe]  # files whose rows in the table don't match the load history
 //	duckpipe [-config duckpipe.yaml] check     # check the config only; nothing is opened
 //
 // SIGHUP makes a running duckpipe poll immediately.
@@ -66,7 +67,7 @@ func main() {
 	mcpToken := fs.String("mcp-token", os.Getenv("DUCKPIPE_MCP_TOKEN"), "serve the MCP tools at /mcp, behind this bearer token")
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Load new files from S3 into DuckLake tables, continuously.\n\n"+
-			"usage: %s [flags] run | once | status | retry [pipe] | history [pipe] | check\n\n", fs.Name())
+			"usage: %s [flags] run | once | status | retry [pipe] | history [pipe] | verify [pipe] | check\n\n", fs.Name())
 		fs.PrintDefaults()
 	}
 
@@ -80,7 +81,7 @@ func main() {
 		pos = append(pos, fs.Arg(0))
 		args = fs.Args()[1:]
 	}
-	if len(pos) == 0 || (pos[0] != "retry" && pos[0] != "history" && len(pos) > 1) || len(pos) > 2 {
+	if len(pos) == 0 || (pos[0] != "retry" && pos[0] != "history" && pos[0] != "verify" && len(pos) > 1) || len(pos) > 2 {
 		fs.Usage()
 		os.Exit(2)
 	}
@@ -128,6 +129,12 @@ func main() {
 				pipe = pos[1]
 			}
 			return e.history(ctx, os.Stdout, pipe)
+		case "verify":
+			pipe := ""
+			if len(pos) == 2 {
+				pipe = pos[1]
+			}
+			return e.printVerify(ctx, os.Stdout, pipe)
 		}
 		fs.Usage()
 		os.Exit(2)
@@ -143,7 +150,8 @@ func main() {
 
 // run polls all pipes every cfg.Poll until ctx is cancelled. SIGHUP (or
 // "Resume" on the page) starts the next poll right away. While stopped from
-// the page, nothing is polled or loaded.
+// the page, nothing is polled or loaded. After each maintenance, verify
+// checks the tables against the load history.
 func (e *engine) run(ctx context.Context) error {
 	hup := make(chan os.Signal, 1)
 	signal.Notify(hup, syscall.SIGHUP)
@@ -161,6 +169,9 @@ func (e *engine) run(ctx context.Context) error {
 						err = context.Cause(wctx)
 					}
 					log.Printf("maintenance: %v", err)
+				}
+				if wctx.Err() == nil {
+					e.checkTables(wctx)
 				}
 				e.setMaintaining(false)
 				// Maintenance stopped from the page runs again on the next poll.

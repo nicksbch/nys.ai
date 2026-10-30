@@ -139,15 +139,27 @@ byte-level progress are left out. Built 2026-10-25, not yet deployed.
 
 ## duckpipe
 
+### Row count and stats from file to lake — `done`
+
+Spec: [duckpipe/SPEC-stats.md](duckpipe/SPEC-stats.md). Every file's
+records are counted with Go's `encoding/csv` (without DuckDB's parser)
+before the load and saved as a `file_stats` JSON column on `load_history`.
+A CSV whose fields per record aren't DuckDB's columns, or a file whose
+rows in the table aren't its records, fails. `verify` re-checks the
+tables' row counts every 6h and shows tables that lost rows as drifted
+(page, relay, CLI, MCP). Built 2026-10-28; slimmed 2026-10-29 to row
+counts only (column stats dropped: they compared DuckDB with itself).
+Not yet deployed.
+
 ### Reload a table from an agent — `idea`
 
 Reloading a pipe's table (drop it and its load history together) is a sudo
 command run by hand (README, "Reload a table"). On 2026-10-23 the crime
 tables were dropped for the `record` migration but their history wasn't
 cleared, so Sep 2023–Aug 2026 never loaded again, and nothing flagged it. An
-MCP action `reload_pipe` (behind approval) would make it one step, and a
-check that every `loaded` history row's file is in its table would catch
-the mismatch.
+MCP action `reload_pipe` (behind approval) would make it one step. The
+check that every `loaded` history row's file is in its table is now
+`duckpipe verify` (from "Row count and stats from file to lake").
 
 ### crime_outcomes files that fail on quotes — `done`
 

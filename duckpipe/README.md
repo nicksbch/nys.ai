@@ -24,6 +24,11 @@ you can also use there to query the tables.
 - **Load history:** like Snowpipe's `COPY_HISTORY`, every file loaded or
   failed is kept with its pipe, target table, rows, status and timestamp:
   `duckpipe history [pipe]`, or query the table (see below).
+- **Row counts:** every file's records are counted without DuckDB before
+  it is loaded and saved in its load history row. A file whose rows in the
+  table aren't its records fails, so what is in a table is what was in its
+  files. `verify` checks the tables again later (see
+  [Row counts](#row-counts)).
 - **Changed files:** a file overwritten with new content (new ETag) is loaded
   again, as Snowpipe does. Its old rows stay; use `_file` to tell them apart.
 - **Schema:** every table has the same three columns, as Snowflake keeps raw
@@ -67,8 +72,11 @@ look right away.
 | `config.go`              | The config file                                                               |
 | `ui.go`                  | The web page's server: JSON API, stop all, resume                             |
 | `ui.html`                | The page (plain HTML and JavaScript, built into the binary)                   |
+| `stats.go`               | Row counts: counting files without DuckDB, and the check against the table    |
+| `verify.go`              | `verify`: the tables against the load history                                 |
 | `mcp.go`                 | The MCP tools at `/mcp`                                                       |
 | `SPEC-mcp.md`            | The MCP tools' spec                                                           |
+| `SPEC-stats.md`          | Row counts' spec                                                              |
 | `duckpipe.yaml`          | The server's config (the pipes), with every setting explained. Deployed as is |
 | `deploy.sh`              | Run on your Mac: builds the binary and installs it on the server              |
 | `install.sh`             | Run on the server by `deploy.sh`: installs duckpipe, the DuckDB CLI, key, config and service |
@@ -103,6 +111,7 @@ pipes:
 | `table`      | `main.<name>`      | Target table, `[schema.]table`                                                  |
 | `options`    |                    | Extra options for `read_csv` / `read_json` / `read_parquet`, as SQL             |
 | `batch`      | `50`               | Most files per transaction                                                      |
+| `stats`      | `true`             | Count each file's records without DuckDB, and fail it if the table's rows differ ([Row counts](#row-counts)) |
 
 Column names and types are detected from each file and kept in `record`: a
 CSV number becomes a JSON number, text a JSON string. `options: "all_varchar =
@@ -146,7 +155,8 @@ go build -o duckpipe .
 ./duckpipe -config my.yaml run       # keep watching
 ./duckpipe -config my.yaml status    # files and rows per pipe, failed files
 ./duckpipe -config my.yaml retry [pipe]
-./duckpipe -config my.yaml history [pipe]   # every file loaded or failed, newest first
+./duckpipe -config my.yaml history [pipe]   # every file loaded or failed, newest first, with its row count check
+./duckpipe -config my.yaml verify [pipe]    # files whose rows in the table don't match the load history (exit code 1 if any)
 ./duckpipe -config my.yaml check     # check the config only; touches nothing
 ```
 
@@ -161,9 +171,55 @@ go build -o duckpipe .
 | `status`        | `loaded` or `failed`                                 |
 | `rows`          | Rows loaded                                          |
 | `error`         | Why it failed                                        |
-| `loaded_at`     | When                                                 |
+| `loaded_at`     | When; for a load, the same as its rows' `_loaded_at` |
+| `file_stats`    | JSON: the file's count, taken before the load        |
 
 `retry` deletes the `failed` rows, so those attempts leave the history.
+
+## Row counts
+
+Every file's records are counted by Go before it is loaded: with
+`encoding/csv` for a CSV, line by line for NDJSON, and from a Parquet
+file's footer. That doesn't use DuckDB's parser or sniffer. The count is
+saved as `file_stats` on the file's history row:
+
+```json
+{"bytes": 98213, "records": 1204, "fields": 12, "columns": 12}
+```
+
+`fields` (per record, from Go) and `columns` (from DuckDB's `DESCRIBE` of
+the file) are for CSVs only. The file fails, with `error` starting
+`check:`, when:
+
+- **Before the load** (nothing is inserted): Go can't read the CSV (bad
+  quoting, or a record with another number of fields than the first, as an
+  unquoted newline gives), or its fields per record aren't DuckDB's
+  columns (e.g. a quoted comma splitting a row, or the wrong `delim`).
+- **After the insert**, in the same transaction: the file's rows in the
+  table aren't its records. The file's rows are deleted again before the
+  commit; the other files of the batch stay.
+
+A failed check is a failed file like any other: on the page's Failed card,
+on relay, in `duckpipectl history`, and loaded again by `retry` once fixed.
+A loaded file's check is `ok` in the history (page, CLI, `load_history`).
+
+Because Go reads CSVs itself, a CSV pipe must say what DuckDB would
+otherwise guess: `header` (true or false), and `delim` if it isn't a comma.
+Quotes are `"`. `duckpipe check` rejects options that change which lines
+are rows (`skip`, `comment`, `new_line`, `ignore_errors`, `null_padding`,
+`strict_mode`, …), a JSON pipe with options, and other quotes, unless the
+pipe has `stats: false`. `.zst` files load without a count (`{"skipped":
+"zst"}`). Rows from before the count have no `file_stats`.
+
+Each file is read once more than before, by Go, streamed from S3.
+
+**verify** checks, after each maintenance (every `maintenance.every`) and
+with `duckpipectl verify [pipe]`, that each table still holds what was
+loaded into it: per file, the rows of its `loaded` history rows against
+its rows in the table now. A table dropped or emptied, or a load history
+cleared while its table stayed, shows as drifted files: a Drifted card on
+the page, in `list_pipes`, and a `duckpipe.verify` `failed` event per pipe.
+The fix is a [reload](#reload-a-table).
 
 You need the `duckdb` CLI, version 1.5 or newer, on your `PATH` (or pass
 `-duckdb`): `curl https://install.duckdb.org | sh`. For a local catalog, use
@@ -248,6 +304,7 @@ with `install.sh` and runs that with `sudo`.
 - **Status:** `sudo duckpipectl status`
 - **Retry failed files:** `sudo duckpipectl retry [pipe]`
 - **Load history:** `sudo duckpipectl history [pipe]`
+- **Tables against the history:** `sudo duckpipectl verify [pipe]`
 - **Poll now:** `sudo systemctl kill -s HUP duckpipe`
 - **Logs:** `journalctl -u duckpipe -f`
 - **New source bucket:** re-run with the full list:
@@ -273,8 +330,10 @@ login), also linked from [atlas](../atlas)'s Services tab:
   listed.
 - **History:** the newest 500 rows of the load history, for all pipes or
   one, loaded and failed or one of them, with the error of each failed
-  file. Its failed rows are every failed attempt, also of files fixed
-  since. The rest: `sudo duckpipectl history [pipe]`.
+  file, and its row count check. Its failed rows are every failed attempt,
+  also of files fixed since. The rest: `sudo duckpipectl history [pipe]`.
+- **Drifted files:** shown only when the last verify found files whose
+  table doesn't hold the rows that were loaded into it.
 - **Stop all:** stops the load under way right away (its `duckdb` process is
   killed, so its transaction is rolled back and nothing of it is kept) and
   stops polling until **Resume**. The stopped files aren't marked failed:
@@ -294,8 +353,8 @@ through mcp-hub as `duckpipe__*`; the `nexus` profile has all four.
 
 | Tool           | Read-only | What it does                                                          |
 |----------------|-----------|-----------------------------------------------------------------------|
-| `list_pipes`   | yes       | The page's state: loading, idle, stopped…, the batch being loaded, each pipe's last poll, error and files waiting |
-| `load_history` | yes       | `{pipe?, status?, limit?}`: each pipe's totals, the failed files (as on the page) and the newest history rows (20 by default, at most 500), by pipe and by `loaded` or `failed` |
+| `list_pipes`   | yes       | The page's state: loading, idle, stopped…, the batch being loaded, each pipe's last poll, error and files waiting, and the drifted files of the last verify |
+| `load_history` | yes       | `{pipe?, status?, limit?}`: each pipe's totals, the failed files (as on the page) and the newest history rows (20 by default, at most 500), by pipe and by `loaded` or `failed`, with each row's row count check |
 | `stop_all`     | no        | Stop all, as on the page                                              |
 | `resume`       | no        | Resume, as on the page                                                |
 
@@ -311,9 +370,10 @@ When `RELAY_URL` is set or `/etc/relay-client.env` exists (relay's
 |-------------------|-----------|-------------------------------------------------------------------|
 | `duckpipe.ingest` | `started` | A batch starts loading                                            |
 | `duckpipe.ingest` | `ok`      | It is loaded, with `items` (rows) and `duration_ms`               |
-| `duckpipe.ingest` | `failed`  | It failed, with `error`. A failed batch of several files is then retried one file at a time, each with its own events |
+| `duckpipe.ingest` | `failed`  | It failed, with `error`. A failed batch of several files is then retried one file at a time, each with its own events. A file that fails its row count check gets its own `failed` event, without a `run_id` |
 | `duckpipe.poll`   | `failed`  | A pipe (or the load history) can't be read, e.g. S3 or catalog down |
 | `duckpipe.poll`   | `ok`      | It can be read again                                              |
+| `duckpipe.verify` | `ok` / `failed` | After each verify, per pipe: `failed` when files drifted, with how many and an example |
 
 `ingest` events share a `run_id` per batch, and their `data` has `name`
 (`pipe: file -> table`; for a batch of several files,

@@ -23,6 +23,10 @@ maintenance:
   # reaches back this far. 0 (or unset) keeps everything.
   keep_snapshots: 720h
 
+# Every file's records are counted with Go's encoding/csv (without DuckDB),
+# and a file whose rows in the table differ fails (README, "Row counts"). So
+# a CSV pipe sets header, and delim if it isn't a comma. "stats: false" on a
+# pipe turns this off.
 pipes:
   # HM Land Registry price paid data (pp-complete.csv, monthly updates): CSV
   # without a header, so the columns are named here. Kept as text; cast later.

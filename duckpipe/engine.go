@@ -33,6 +33,7 @@ type engine struct {
 	lake     string // quoted lake name
 	hist     string // quoted history table
 	dataPath string // the lake's own files, never loaded as input
+	root     string // tests: files are read from <root>/<bucket>/<key>, not S3
 
 	bus  *relay.Client   // nil (no-op) when relay isn't configured
 	down map[string]bool // what last failed to poll, so relay hears of it once
@@ -45,6 +46,8 @@ type engine struct {
 	maintaining time.Time               // when maintenance started, if it is running
 	pipes       map[string]pipeState    // each pipe's last poll
 	poke        chan struct{}           // starts the next poll now
+	verified    *time.Time              // when verify last ran
+	drifted     []drift                 // what it found, every pipe's
 }
 
 // loading is the batch being loaded, as the page shows it.
@@ -180,16 +183,8 @@ func open(ctx context.Context, cfg *config, duckdbBin, endpoint, profile, region
 	}
 
 	e.duck = &duck{bin: bin, setup: setup}
-	res, err = e.duck.query(ctx,
-		"CREATE SCHEMA IF NOT EXISTS "+e.lake+"."+qi(historySchema),
-		`CREATE TABLE IF NOT EXISTS `+e.hist+` (
-			pipe VARCHAR, bucket VARCHAR, key VARCHAR, etag VARCHAR, size BIGINT,
-			last_modified TIMESTAMPTZ, status VARCHAR, rows BIGINT, error VARCHAR,
-			loaded_at TIMESTAMPTZ, target VARCHAR)`,
-		// Histories from before target was recorded.
-		"ALTER TABLE "+e.hist+" ADD COLUMN IF NOT EXISTS target VARCHAR",
-		"SELECT value AS data_path FROM ducklake_options("+ql(cfg.Lake.Name)+") WHERE option_name = 'data_path'",
-	)
+	res, err = e.duck.query(ctx, append(e.historyDDL(),
+		"SELECT value AS data_path FROM ducklake_options("+ql(cfg.Lake.Name)+") WHERE option_name = 'data_path'")...)
 	if err != nil {
 		return nil, fmt.Errorf("opening the lake: %w", err)
 	}
@@ -199,6 +194,20 @@ func open(ctx context.Context, cfg *config, duckdbBin, endpoint, profile, region
 		e.dataPath = res[0].str("data_path")
 	}
 	return e, nil
+}
+
+// historyDDL creates the load history, or brings an older one up to date.
+func (e *engine) historyDDL() []string {
+	return []string{
+		"CREATE SCHEMA IF NOT EXISTS " + e.lake + "." + qi(historySchema),
+		`CREATE TABLE IF NOT EXISTS ` + e.hist + ` (
+			pipe VARCHAR, bucket VARCHAR, key VARCHAR, etag VARCHAR, size BIGINT,
+			last_modified TIMESTAMPTZ, status VARCHAR, rows BIGINT, error VARCHAR,
+			loaded_at TIMESTAMPTZ, target VARCHAR)`,
+		// Histories from before target, and the row counts (stats.go), were recorded.
+		"ALTER TABLE " + e.hist + " ADD COLUMN IF NOT EXISTS target VARCHAR",
+		"ALTER TABLE " + e.hist + " ADD COLUMN IF NOT EXISTS file_stats JSON",
+	}
 }
 
 func lookPath(bin string) (string, error) {
@@ -341,7 +350,7 @@ func (e *engine) poll(ctx context.Context, p *pipe, done map[string]bool) error 
 			continue
 		}
 		e.publish("ingest", "failed", "", e.ingestData(p, []object{o}), errors.New(why))
-		if err := e.fail(ctx, p, o, errors.New(why)); err != nil {
+		if err := e.fail(ctx, p, o, errors.New(why), nil); err != nil {
 			return err
 		}
 	}
@@ -357,7 +366,7 @@ func (e *engine) poll(ctx context.Context, p *pipe, done map[string]bool) error 
 		n := min(p.Batch, len(todo))
 		batch := todo[:n]
 		todo = todo[n:]
-		if err := e.loadBatch(ctx, p, batch); err != nil {
+		if err := e.loadBatch(ctx, p, batch, nil); err != nil {
 			return err
 		}
 		e.setWaiting(p.Name, todo)
@@ -368,13 +377,15 @@ func (e *engine) poll(ctx context.Context, p *pipe, done map[string]bool) error 
 // loadBatch loads files in one transaction. If that fails because of a file,
 // it loads them one at a time, so only the bad files are marked failed.
 // Each attempt is published to relay as "duckpipe.ingest": "started", then
-// "ok" or "failed" with the same run ID.
-func (e *engine) loadBatch(ctx context.Context, p *pipe, batch []object) error {
+// "ok" or "failed" with the same run ID. A file whose row count differs
+// between the file and the table fails on its own, as "duckpipe.ingest"
+// "failed". fs is the batch's file stats, if they were taken already.
+func (e *engine) loadBatch(ctx context.Context, p *pipe, batch []object, fs map[string]*fileStats) error {
 	start := time.Now()
 	runID := newRunID()
 	e.publish("ingest", "started", runID, e.ingestData(p, batch), nil)
 	e.setLoading(p, batch, start)
-	rows, err := e.load(ctx, p, batch)
+	rows, checks, err := e.checkAndLoad(ctx, p, batch, &fs)
 	e.setLoading(nil, nil, time.Time{})
 	if ctx.Err() != nil {
 		err = context.Cause(ctx) // e.g. errStopped
@@ -387,7 +398,11 @@ func (e *engine) loadBatch(ctx context.Context, p *pipe, batch []object) error {
 	e.publish("ingest", result(err), runID, data, err)
 	if err == nil {
 		log.Printf("%s: loaded %d file(s), %d rows into %s in %s",
-			p.Name, len(batch), rows, e.targetName(p), time.Since(start).Round(time.Millisecond))
+			p.Name, len(batch)-len(checks), rows, e.targetName(p), time.Since(start).Round(time.Millisecond))
+		for _, c := range checks {
+			log.Printf("%s: s3://%s/%s failed: %s", p.Name, p.Bucket, c.o.Key, c.err)
+			e.publish("ingest", "failed", "", e.ingestData(p, []object{c.o}), c.err)
+		}
 		return nil
 	}
 	if transient(ctx, err) {
@@ -395,14 +410,63 @@ func (e *engine) loadBatch(ctx context.Context, p *pipe, batch []object) error {
 	}
 	if len(batch) == 1 {
 		log.Printf("%s: s3://%s/%s failed: %v", p.Name, p.Bucket, batch[0].Key, firstLine(err.Error()))
-		return e.fail(ctx, p, batch[0], err)
+		return e.fail(ctx, p, batch[0], err, fs[batch[0].Key])
 	}
 	for _, o := range batch {
-		if err := e.loadBatch(ctx, p, []object{o}); err != nil {
+		if s := fs[o.Key]; s != nil && s.problem != "" {
+			continue // failed its check already
+		}
+		if err := e.loadBatch(ctx, p, []object{o}, fs); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// checkFailure is a file that failed its row count check.
+type checkFailure struct {
+	o   object
+	err error
+}
+
+// checkAndLoad counts the batch's files (into *fs, unless they are there),
+// fails the files Go can't count or whose columns differ from DuckDB's, and
+// loads the rest. It returns the rows loaded and the files that failed a
+// check.
+func (e *engine) checkAndLoad(ctx context.Context, p *pipe, batch []object, fs *map[string]*fileStats) (int64, []checkFailure, error) {
+	if *fs == nil {
+		var err error
+		if *fs, err = e.fileStats(ctx, p, batch); err != nil {
+			return 0, nil, err
+		}
+	}
+	var checks []checkFailure
+	load := batch[:0:0]
+	for _, o := range batch {
+		s := (*fs)[o.Key]
+		if s == nil || s.problem == "" {
+			load = append(load, o)
+			continue
+		}
+		err := errors.New("check: " + s.problem)
+		if ferr := e.fail(ctx, p, o, err, s); ferr != nil {
+			return 0, nil, ferr
+		}
+		checks = append(checks, checkFailure{o, err})
+	}
+	if len(load) == 0 {
+		return 0, checks, nil
+	}
+	rows, failed, err := e.load(ctx, p, load, *fs)
+	if err != nil {
+		return 0, nil, err
+	}
+	for _, o := range load {
+		if msg, ok := failed[o.Key]; ok {
+			checks = append(checks, checkFailure{o, errors.New(msg)})
+		}
+	}
+	return rows, checks, nil
 }
 
 // ingestData describes a batch for relay: name ("pipe: file -> table"),
@@ -424,7 +488,23 @@ func (e *engine) ingestData(p *pipe, batch []object) map[string]any {
 }
 
 func (e *engine) url(p *pipe, o object) string {
-	return "s3://" + p.Bucket + "/" + o.Key
+	return e.objURL(p.Bucket, o.Key)
+}
+
+func (e *engine) objURL(bucket, key string) string {
+	if e.root != "" {
+		return filepath.Join(e.root, bucket, key)
+	}
+	return "s3://" + bucket + "/" + key
+}
+
+// urlSQL is objURL in SQL, of the SQL expressions bucket and key.
+func (e *engine) urlSQL(bucket, key string) string {
+	prefix := "s3://"
+	if e.root != "" {
+		prefix = e.root + "/"
+	}
+	return ql(prefix) + " || " + bucket + " || '/' || " + key
 }
 
 func (e *engine) target(p *pipe) string {
@@ -437,49 +517,68 @@ func (e *engine) targetName(p *pipe) string {
 }
 
 // load inserts the files into the pipe's table and records them in the load
-// history, all in one transaction. It returns the number of rows loaded.
-func (e *engine) load(ctx context.Context, p *pipe, batch []object) (int64, error) {
+// history, all in one transaction. With file stats (fs), each file's rows in
+// the table are checked against its records: a file that differs is deleted
+// again and recorded as failed, before the commit. It returns the number of
+// rows loaded and the error of each file that failed, by key.
+func (e *engine) load(ctx context.Context, p *pipe, batch []object, fs map[string]*fileStats) (int64, map[string]string, error) {
 	// Every row gets the file it came from and the load time. The timestamp is
 	// unique to this load, which also lets us count rows per file.
 	ts := tsLit(time.Now())
 	parts := make([]string, len(batch))
 	files := make([]string, len(batch))
+	urls := make([]string, len(batch))
+	checks := make([]string, len(batch))
 	for i, o := range batch {
 		src := ql(e.url(p, o))
-		args := src
-		if p.Options != "" {
-			args += ", " + p.Options
-		}
 		// Each row of the file becomes one JSON object, keyed by column name.
 		record := "to_json(t)"
 		if p.formatOf(o.Key) == "json" {
 			record = "json" // read_json_objects already gives one object per row
 		}
-		parts[i] = fmt.Sprintf("SELECT %s AS record, %s AS _file, %s AS _loaded_at FROM %s(%s) t",
-			record, src, ts, reader[p.formatOf(o.Key)], args)
-		files[i] = fmt.Sprintf("(%s, %s, %d, %s, %s)", ql(o.Key), ql(o.ETag), o.Size, tsLit(o.Modified), src)
+		parts[i] = fmt.Sprintf("SELECT %s AS record, %s AS _file, %s AS _loaded_at FROM %s t",
+			record, src, ts, e.reader(p, o))
+		stats := "NULL"
+		if s := fs[o.Key]; s != nil {
+			stats = ql(s.json())
+		}
+		files[i] = fmt.Sprintf("(%s, %s, %d, %s, %s, %s)", ql(o.Key), ql(o.ETag), o.Size, tsLit(o.Modified), src, stats)
+		urls[i] = fmt.Sprintf("(%s, %s)", ql(o.Key), src)
+		checks[i] = lakeCheck(e.target(p), e.url(p, o), ts, fs[o.Key])
 	}
 	src := strings.Join(parts, "\nUNION ALL\n")
 
+	// The history row's loaded_at is the rows' _loaded_at, so this load's
+	// rows and history rows can be found again.
+	this := " WHERE pipe = " + ql(p.Name) + " AND loaded_at = " + ts
 	stmts := []string{"BEGIN",
 		"INSERT INTO " + e.target(p) + " " + src,
-		`INSERT INTO `+e.hist+`
-		SELECT `+ql(p.Name)+`, `+ql(p.Bucket)+`, f.key, f.etag, f.size, f.modified,
-			'loaded', coalesce(c.n, 0), NULL, now(), `+ql(e.targetName(p))+`
-		FROM (VALUES `+strings.Join(files, ", ")+`) f(key, etag, size, modified, url)
-		LEFT JOIN (SELECT _file, count(*) AS n FROM `+e.target(p)+` WHERE _loaded_at = `+ts+` GROUP BY ALL) c
-			ON c._file = f.url`,
+		`INSERT INTO ` + e.hist + ` (pipe, bucket, key, etag, size, last_modified, status, rows, error, loaded_at, target, file_stats)
+		SELECT ` + ql(p.Name) + `, ` + ql(p.Bucket) + `, f.key, f.etag, f.size, f.modified,
+			CASE WHEN c.mismatch IS NULL THEN 'loaded' ELSE 'failed' END,
+			CASE WHEN c.mismatch IS NULL THEN coalesce(c.n, 0) ELSE 0 END,
+			'check: ' || c.mismatch, ` + ts + `, ` + ql(e.targetName(p)) + `, f.file_stats::JSON
+		FROM (VALUES ` + strings.Join(files, ", ") + `) f(key, etag, size, modified, url, file_stats)
+		LEFT JOIN (` + strings.Join(checks, "\nUNION ALL\n") + `) c ON c.url = f.url`,
+		// The files that failed their check leave the table again.
+		"DELETE FROM " + e.target(p) + " WHERE _loaded_at = " + ts + " AND _file IN (SELECT f.url FROM (VALUES " +
+			strings.Join(urls, ", ") + ") f(key, url) JOIN (SELECT key FROM " + e.hist + this + " AND status = 'failed') h USING (key))",
 		"COMMIT",
-		"SELECT count(*) AS n FROM "+e.target(p)+" WHERE _loaded_at = "+ts,
+		"SELECT key, status, rows, error FROM " + e.hist + this,
 	}
 	res, err := e.duck.query(ctx, stmts...)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
-	if len(res) == 0 {
-		return 0, nil
+	var rows int64
+	failed := map[string]string{}
+	for _, r := range res {
+		rows += r.int("rows")
+		if r.str("status") == "failed" {
+			failed[r.str("key")] = r.str("error")
+		}
 	}
-	return res[0].int("n"), nil
+	return rows, failed, nil
 }
 
 // partitionBy splits a table's Parquet files by the UTC day they were loaded.
@@ -520,14 +619,19 @@ func (e *engine) ensureTable(ctx context.Context, p *pipe) error {
 }
 
 // fail records a file as failed, so it is skipped until it changes or someone
-// runs "duckpipe retry".
-func (e *engine) fail(ctx context.Context, p *pipe, o object, cause error) error {
+// runs "duckpipe retry". fs is its count, if it was taken.
+func (e *engine) fail(ctx context.Context, p *pipe, o object, cause error, fs *fileStats) error {
 	msg := cause.Error()
 	if len(msg) > 2000 {
 		msg = msg[:2000] + "…"
 	}
-	_, err := e.duck.run(ctx, fmt.Sprintf("INSERT INTO %s VALUES (%s, %s, %s, %s, %d, %s, 'failed', 0, %s, now(), %s)",
-		e.hist, ql(p.Name), ql(p.Bucket), ql(o.Key), ql(o.ETag), o.Size, tsLit(o.Modified), ql(msg), ql(e.targetName(p))))
+	stats := "NULL"
+	if fs != nil {
+		stats = ql(fs.json())
+	}
+	_, err := e.duck.run(ctx, fmt.Sprintf(`INSERT INTO %s (pipe, bucket, key, etag, size, last_modified, status, rows, error, loaded_at, target, file_stats)
+		VALUES (%s, %s, %s, %s, %d, %s, 'failed', 0, %s, now(), %s, %s)`,
+		e.hist, ql(p.Name), ql(p.Bucket), ql(o.Key), ql(o.ETag), o.Size, tsLit(o.Modified), ql(msg), ql(e.targetName(p)), stats))
 	return err
 }
 
@@ -617,8 +721,8 @@ func (e *engine) status(ctx context.Context, w io.Writer) error {
 // failed, optionally for one pipe and one status ("loaded" or "failed")
 // only, at most limit rows (0: all). at is UTC, "2006-01-02 15:04:05".
 func (e *engine) historyRows(ctx context.Context, pipe, status string, limit int) ([]row, error) {
-	q := `SELECT strftime(loaded_at, '%Y-%m-%d %H:%M:%S') AS at, pipe, 's3://' || bucket || '/' || key AS file,
-			coalesce(target, '-') AS target, status, rows, size, error
+	q := `SELECT strftime(loaded_at, '%Y-%m-%d %H:%M:%S') AS at, pipe, key, 's3://' || bucket || '/' || key AS file,
+			coalesce(target, '-') AS target, status, rows, size, error, ` + checkSQL + ` AS "check"
 		FROM ` + e.hist + " WHERE true"
 	if pipe != "" {
 		q += " AND pipe = " + ql(pipe)
@@ -641,13 +745,27 @@ func (e *engine) history(ctx context.Context, w io.Writer, pipe string) error {
 		return err
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "LOADED AT\tPIPE\tFILE\tTARGET\tSTATUS\tROWS")
+	fmt.Fprintln(tw, "LOADED AT\tPIPE\tFILE\tTARGET\tSTATUS\tROWS\tCHECK")
 	for _, r := range rows {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%d\n", r.str("at"), r.str("pipe"), r.str("file"),
-			r.str("target"), r.str("status"), r.int("rows"))
+		check := r.str("check")
+		if check == "failed" {
+			check = firstLine(strings.TrimPrefix(r.str("error"), "check: "))
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%d\t%s\n", r.str("at"), r.str("pipe"), r.str("file"),
+			r.str("target"), r.str("status"), r.int("rows"), check)
 	}
 	return tw.Flush()
 }
+
+// checkSQL is a history row's row count check: "ok" (the file's records
+// all landed), "failed" (the reason is in error), "skipped" (a file that
+// can't be counted, e.g. .zst) or "-" (not counted: from before the check,
+// stats off, or failed before it was counted).
+const checkSQL = `CASE
+		WHEN file_stats->>'skipped' IS NOT NULL THEN 'skipped'
+		WHEN starts_with(error, 'check: ') THEN 'failed'
+		WHEN file_stats->>'records' IS NOT NULL AND status = 'loaded' THEN 'ok'
+		ELSE '-' END`
 
 // retry forgets failed files, so the next poll tries them again.
 func (e *engine) retry(ctx context.Context, pipe string) error {

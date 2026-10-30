@@ -44,8 +44,9 @@ Other tools, all of which only read:
 - `vigil__list_events`: recent job events of every app, newest first.
 - `vigil__get_run`: every event of one run, with the full error, for "why
   did it fail?".
-- `duckpipe__list_pipes`: what duckpipe is loading now, and each pipe's
-  files still to load.
+- `duckpipe__list_pipes`: what duckpipe is loading now, each pipe's files
+  still to load, and the files whose table no longer holds the rows that
+  were loaded (drifted).
 - `duckpipe__load_history`: the files each pipe loaded or failed to load,
   for "did the crime CSVs load?".
 - `lakeshape__list_jobs`: lakeshape's jobs, which models they build, when

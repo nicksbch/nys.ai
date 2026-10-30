@@ -52,10 +52,13 @@ func (e *engine) mcpHandler() http.Handler {
 	mcp.AddTool(s, &mcp.Tool{Name: "list_pipes", Annotations: readOnly,
 		Description: "What duckpipe is doing now: its state (loading, maintenance, idle, stopping, stopped), the batch " +
 			"being loaded, and each pipe's source (s3://bucket/prefix/pattern), table, last poll and its error, and the " +
-			"files it still has to load."}, e.toolPipes)
+			"files it still has to load. Also the last verify (after each maintenance): the files whose rows in their " +
+			"table no longer match the rows the load history says were loaded (drifted)."}, e.toolPipes)
 	mcp.AddTool(s, &mcp.Tool{Name: "load_history", Annotations: readOnly,
 		Description: "Each pipe's totals (files and rows loaded, files failed, last load) and the newest load history " +
-			"rows: when, pipe, file, table, status (loaded or failed), rows, size and the error of a failed file."}, e.toolHistory)
+			"rows: when, pipe, file, table, status (loaded or failed), rows, size, the error of a failed file, and the " +
+			"row count check: ok (every record of the file, counted without DuckDB, is in the table), failed (error says " +
+			"how the counts differ), skipped, or - when the file wasn't counted."}, e.toolHistory)
 	mcp.AddTool(s, &mcp.Tool{Name: "stop_all",
 		Description: "Stop all loading, as Stop all on duckpipe's page: the load under way is cancelled and rolled back, " +
 			"and no pipe polls until resume. The files of the cancelled load are loaded again after resume."}, e.toolStop)

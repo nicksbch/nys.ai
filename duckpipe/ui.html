@@ -127,6 +127,17 @@ a.st-failed:hover { text-decoration: underline; }
     </table></div>
   </section>
 
+  <section class="card banner" id="drift-card" hidden>
+    <div class="card-head">
+      <h2>Drifted files</h2>
+      <span class="sub" id="drift-note"></span>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Pipe</th><th>File</th><th class="num">Loaded</th><th class="num">In table</th></tr></thead>
+      <tbody id="drift"></tbody>
+    </table></div>
+  </section>
+
   <section class="card">
     <div class="card-head">
       <h2>Pipes</h2>
@@ -148,7 +159,7 @@ a.st-failed:hover { text-decoration: underline; }
     </div>
     <div class="error-line" id="history-error" hidden></div>
     <div class="table-wrap"><table>
-      <thead><tr><th>When</th><th>Pipe</th><th>File</th><th class="opt">Table</th><th>Status</th><th class="num">Rows</th><th class="num opt">Size</th></tr></thead>
+      <thead><tr><th>When</th><th>Pipe</th><th>File</th><th class="opt">Table</th><th>Status</th><th title="Records counted in the file (without DuckDB) against rows in the table">Check</th><th class="num">Rows</th><th class="num opt">Size</th></tr></thead>
       <tbody id="history"></tbody>
     </table></div>
   </section>
@@ -235,7 +246,21 @@ function renderTop(s) {
     $('loading-files').replaceChildren(...l.keys.map(k => el('li', {}, 's3://' + l.bucket + '/' + k)));
   }
   $('maint-card').hidden = !s.maintaining;
-  if (s.maintaining) $('maint-info').textContent = 'merging small files, dropping old snapshots · ' + fmtDur((Date.now() - new Date(s.maintaining)) / 1000);
+  if (s.maintaining) $('maint-info').textContent = 'merging small files, dropping old snapshots, checking tables · ' + fmtDur((Date.now() - new Date(s.maintaining)) / 1000);
+}
+
+// renderDrift lists the files whose rows in their table no longer match the
+// load history, as the last verify found them.
+function renderDrift(s) {
+  $('drift-card').hidden = !s.drifted_files;
+  if (!s.drifted_files) return;
+  $('drift-note').textContent = (s.drifted_files > s.drifted.length ? 'First ' + s.drifted.length + ' of ' + fmtNum(s.drifted_files) + '. ' : '')
+    + 'Checked ' + fmtAge(s.verified) + '. Their table lost rows, or has rows the load history doesn\'t know. Reload the table (README, "Reload a table"); all of them: sudo duckpipectl verify.';
+  $('drift').replaceChildren(...s.drifted.map(d => el('tr', {},
+    el('td', {class: 'nowrap'}, d.pipe),
+    el('td', {class: 'path mono'}, d.file),
+    el('td', {class: 'num'}, fmtNum(d.history)),
+    el('td', {class: 'num st-failed'}, fmtNum(d.table)))));
 }
 
 function renderPipes() {
@@ -284,10 +309,19 @@ function renderHistory() {
     el('td', {class: 'path'}, el('div', {class: 'mono'}, h.file), h.error ? el('div', {class: 'err'}, h.error) : null),
     el('td', {class: 'mono opt'}, h.target),
     el('td', {class: 'nowrap st-' + h.status}, h.status),
+    checkCell(h),
     el('td', {class: 'num'}, fmtNum(h.rows)),
     el('td', {class: 'num opt'}, fmtBytes(h.size))));
   $('history').replaceChildren(...(rows.length ? rows
-    : [el('tr', {}, el('td', {colspan: 7, class: 'empty'}, status ? 'Nothing ' + status + '.' : 'Nothing loaded yet.'))]));
+    : [el('tr', {}, el('td', {colspan: 8, class: 'empty'}, status ? 'Nothing ' + status + '.' : 'Nothing loaded yet.'))]));
+}
+
+// checkCell is a history row's row count check: ok, failed (why is in the
+// row's error), skipped, or "–" when the file wasn't counted.
+function checkCell(h) {
+  if (h.check === 'ok') return el('td', {class: 'nowrap st-loaded'}, 'ok');
+  if (h.check === 'failed') return el('td', {class: 'nowrap st-failed'}, 'failed');
+  return el('td', {class: 'nowrap'}, h.check === 'skipped' ? 'skipped' : '–');
 }
 
 function renderPipeFilter(pipes) {
@@ -312,6 +346,7 @@ async function poll() {
     const finished = state && state.loading && !s.loading;
     state = s;
     renderTop(s);
+    renderDrift(s);
     renderPipeFilter(s.pipes);
     renderPipes();
     if (finished) loadHistory();

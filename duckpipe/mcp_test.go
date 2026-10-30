@@ -110,7 +110,8 @@ func TestMCPHistory(t *testing.T) {
 		('orders', 'home', 'raw/orders/c.csv', 'failed', 0, 'fixed since', TIMESTAMPTZ '2026-10-19 10:00:00+00', NULL, 60),
 		('orders', 'home', 'raw/orders/c.csv', 'loaded', 5, NULL, TIMESTAMPTZ '2026-10-22 10:00:00+00', 'lake.raw.orders', 60),
 		('crime', 'home', 'uk/x.csv', 'loaded', 7, NULL, TIMESTAMPTZ '2026-10-23 10:00:00+00', 'lake.raw.crime', 70)
-	) AS t(pipe, bucket, key, status, rows, error, loaded_at, target, size)`}}
+	) AS t(pipe, bucket, key, status, rows, error, loaded_at, target, size)`,
+		"ALTER TABLE h ADD COLUMN file_stats JSON"}}
 	s, err := connect(t, e, "mcp-token")
 	if err != nil {
 		t.Fatal(err)

@@ -200,6 +200,11 @@ type stateView struct {
 	Loading     *loading   `json:"loading"`
 	Maintaining *time.Time `json:"maintaining"`
 	Pipes       []pipeView `json:"pipes"`
+	// The last verify: when it ran (nil: not since the start), how many
+	// files drifted, and the first driftLimit of them.
+	Verified     *time.Time `json:"verified"`
+	DriftedFiles int        `json:"drifted_files"`
+	Drifted      []drift    `json:"drifted"`
 }
 
 type pipeView struct {
@@ -216,7 +221,11 @@ func (e *engine) apiState(w http.ResponseWriter, r *http.Request) {
 func (e *engine) stateView() stateView {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	v := stateView{State: "idle", Poll: e.cfg.Poll.Duration.String(), Loading: e.loading, Pipes: []pipeView{}}
+	v := stateView{State: "idle", Poll: e.cfg.Poll.Duration.String(), Loading: e.loading, Pipes: []pipeView{},
+		Verified: e.verified, DriftedFiles: len(e.drifted), Drifted: e.drifted[:min(len(e.drifted), driftLimit)]}
+	if v.Drifted == nil {
+		v.Drifted = []drift{}
+	}
 	if !e.maintaining.IsZero() {
 		t := e.maintaining
 		v.Maintaining = &t
@@ -274,6 +283,9 @@ type histView struct {
 	Rows   int64  `json:"rows"`
 	Size   int64  `json:"size"`
 	Error  string `json:"error,omitempty"`
+	// The row count check: ok, failed (why is in Error), skipped, or "-"
+	// (not counted).
+	Check string `json:"check"`
 }
 
 // apiHistory returns each pipe's totals, the failed files and the newest
@@ -318,7 +330,7 @@ func (e *engine) historyView(ctx context.Context, pipe, status string, limit int
 	for _, h := range rows {
 		v.History = append(v.History, histView{At: h.str("at"), Pipe: h.str("pipe"), File: h.str("file"),
 			Target: h.str("target"), Status: h.str("status"), Rows: h.int("rows"), Size: h.int("size"),
-			Error: h.str("error")})
+			Error: h.str("error"), Check: h.str("check")})
 	}
 	return v, nil
 }

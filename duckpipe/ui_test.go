@@ -14,7 +14,7 @@ import (
 
 func testEngine(t *testing.T) *engine {
 	t.Helper()
-	cfg := &config{Pipes: []*pipe{{Name: "orders", Bucket: "home", Prefix: "raw/orders/", Pattern: "*.csv", Table: "raw.orders"}}}
+	cfg := &config{Pipes: []*pipe{{Name: "orders", Bucket: "home", Prefix: "raw/orders/", Pattern: "*.csv", Table: "raw.orders", Options: "header = true"}}}
 	cfg.Lake.Name = "lake"
 	cfg.Lake.Catalog = "ducklake:sqlite:catalog.sqlite"
 	if err := cfg.check(); err != nil {
@@ -83,12 +83,14 @@ func TestStopKillsLoad(t *testing.T) {
 	}
 	e.duck = &duck{bin: bin}
 	p := e.cfg.Pipes[0]
+	off := false
+	p.Stats = &off // no S3 to count the files from
 	batch := []object{{Key: "raw/orders/a.csv", ETag: "x", Size: 10}, {Key: "raw/orders/b.csv", ETag: "y", Size: 5}}
 
 	wctx, done := e.work(context.Background())
 	defer done()
 	errc := make(chan error, 1)
-	go func() { errc <- e.loadBatch(wctx, p, batch) }()
+	go func() { errc <- e.loadBatch(wctx, p, batch, nil) }()
 
 	deadline := time.Now().Add(5 * time.Second)
 	for getState(t, e).Loading == nil {
