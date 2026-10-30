@@ -9,9 +9,9 @@ approve it.
 
 ```
 👎 in analyst ─► relay: analyst.feedback bad ─► foreman task "semantic-feedback"
-     agent "modeler": semantic__* (try the question) + repo__read_file (models.yml, marts)
+     agent "modeler": semantic__* (try the question) + repo-semantic__read_file (models.yml, marts)
      ─► result: diagnosis, change                                   (part 2)
-     ─► proposes repo__open_pull_request ─► you approve ─► PR       (part 3)
+     ─► proposes repo-semantic__open_pull_request ─► you approve ─► PR       (part 3)
      ─► you review and merge ─► semantic/deploy.sh (tests, check) ─► live
 ```
 
@@ -34,8 +34,8 @@ the flag. analyst doesn't look at annotations, so it is unaffected.
 **mcp-hub `servers.json`:**
 
 ```json
-{"name": "repo", "url": "http://127.0.0.1:8099/mcp", "token_env": "REPO_MCP_TOKEN"}
-"modeler": {"servers": ["semantic", "repo"]}
+{"name": "repo-semantic", "url": "http://127.0.0.1:8099/mcp/semantic", "token_env": "REPO_MCP_TOKEN"}
+"modeler": {"servers": ["semantic", "repo-semantic"]}
 ```
 
 ### foreman config, in the repo
@@ -100,7 +100,7 @@ and error) and data.comment (what the person said was wrong, maybe empty).
 |-----|--------|
 | `semantic` | read-only annotations, and a test |
 | `repo` (new) | the server with `list_files` and `read_file` ([spec](../repo-mcp/SPEC.md)) |
-| `mcp-hub` | `repo` server, `modeler` profile, and `install.sh` copies `REPO_MCP_TOKEN` |
+| `mcp-hub` | `repo-semantic` server, `modeler` profile, and `install.sh` copies `REPO_MCP_TOKEN` |
 | `foreman` | config only: the agent, the task type, the sample event. **No code change** |
 | `deploy-all.sh`, `home` | a `repo-mcp` step before `mcp-hub`. No home card (no UI) |
 
@@ -112,10 +112,10 @@ hand, and that is already the whole loop, without part 3.
 - **repo:** adds `open_pull_request` ([spec](../repo-mcp/SPEC.md)). The GitHub
   token gets write access to contents and pull requests.
 - **foreman:** gets approved actions ([SPEC-actions.md](../foreman/SPEC-actions.md)).
-- **mcp-hub:** the `modeler` profile already shows every `repo` tool.
-- **The task type** adds `actions: repo__open_pull_request`, and a step 5:
+- **mcp-hub:** the `modeler` profile already shows every `repo-semantic` tool.
+- **The task type** adds `actions: repo-semantic__open_pull_request`, and a step 5:
 
-  > 5. If you propose a change, also call repo__open_pull_request with
+  > 5. If you propose a change, also call repo-semantic__open_pull_request with
   >    the same edit. Title: what the change does. Body: the question, the
   >    person's comment, your diagnosis, and how to check the change.
   >    Then submit as above.
@@ -131,7 +131,7 @@ that can propose a code change. These limits contain that:
 
 1. **Two people-steps:** approving the action in foreman, then merging the
    PR on GitHub. Nothing changes `main` on its own.
-2. **Narrow writes:** repo only edits the `write` paths
+2. **Narrow writes:** repo-mcp's `semantic` scope only edits its `write` paths
    (`semantic/models.yml`, `semantic/test_models.py`), on a new branch, with
    a token scoped to this one repo.
 3. **Deploy gate:** `semantic/deploy.sh` runs `test_models.py`, then
@@ -147,7 +147,7 @@ that can propose a code change. These limits contain that:
   and then decide. That needs a `claude` entry in `foreman/config/models.json`
   and `ANTHROPIC_API_KEY` in `/etc/foreman.env`.
 - **Name:** `repo-mcp` for the new app (the binary, the service, `/etc`),
-  and `repo` as the hub server, so its tools are `repo__*`.
+  and `repo` as the hub server, so its tools are `repo-semantic__*`.
 
 ## Order of work
 
