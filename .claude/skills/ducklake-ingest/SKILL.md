@@ -38,21 +38,45 @@ If the key has a typo or an odd layout, keep the pipe pointed at where the
 data really is and tell the user. Never move or rename files in the bucket
 without asking.
 
-## 2. Profile the data with DuckDB, using duckpipe's read options
+## 2. Profile a sample with DuckDB, using duckpipe's read options
 
-Load it into a scratch DuckDB in the scratchpad, with **the same options the
-pipe will use**, so what you see is what the staging model will see:
+Develop against a **sample**, never the whole file: datasets can be
+gigabytes, and every profiling query and test run (step 9) would read it
+again. Files under ~100 MB can be used whole. For anything bigger, take the
+first ~100 MB with a range request and cut the last, partial line:
+
+```sh
+aws s3api get-object --bucket home --key <key> --range bytes=0-100000000 <scratchpad>/<dataset>.part
+sed '$d' <scratchpad>/<dataset>.part > <scratchpad>/<dataset>.csv && rm <scratchpad>/<dataset>.part
+```
+
+With many files per dataset (one per month, per force…), take one or two
+of them, not the whole prefix. Files that are sorted (by key, date, region)
+make the head of the file unrepresentative: also take a range from the
+middle and the end, drop each one's first (partial) line, and append them to
+the sample (`tail -n +2`), so the header stays the first line only.
+
+Load the sample into a scratch DuckDB in the scratchpad, with **the same
+options the pipe will use**, so what you see is what the staging model will
+see:
 
 ```sh
 duckdb <scratchpad>/<dataset>.duckdb -c "
-CREATE SECRET (TYPE s3, PROVIDER credential_chain, REGION 'garage',
-               ENDPOINT '192.168.1.169:3900', URL_STYLE 'path', USE_SSL false);
-CREATE TABLE t AS FROM read_csv('s3://home/<key>', header = true, all_varchar = true, normalize_names = true);"
+CREATE TABLE t AS FROM read_csv('<scratchpad>/<dataset>.csv', header = true, all_varchar = true, normalize_names = true);"
 ```
+
+Reading straight from S3 (`read_csv('s3://home/<key>', …)` after
+`CREATE SECRET (TYPE s3, PROVIDER credential_chain, REGION 'garage',
+ENDPOINT '192.168.1.169:3900', URL_STYLE 'path', USE_SSL false)`) is fine for
+small files. When one question needs the full file (is the key unique
+across all rows? how many sentinels in total?), answer it with a single
+aggregate query, over S3 or with the `ducklake-query` skill once loaded,
+rather than copying the file into the scratch DB.
 
 The local DuckDB may be older than 1.5: fine for reading S3 files, but it
 can't open the lake itself. Find out, and write down for the model's header
-comment and yml:
+comment and yml (a sample can miss rare values: say which findings come from
+the sample only):
 
 - **Grain:** what one row is, and the key that is unique (`count(distinct)`
   vs `count(*)`).
@@ -190,7 +214,10 @@ SELECT to_json(t) AS record, 's3://home/<key>' AS _file, now() AS _loaded_at FRO
 ```
 
 and run each yml test by hand (count nulls, duplicates of the key, values
-outside `accepted_values`). Every `error` test must pass on the real file.
+outside `accepted_values`). Every `error` test must pass on the sample. The
+full data is tested by the job after the load (step 10); if a grain key's
+uniqueness is in doubt, check it on the full file first with one
+`count(*)` vs `count(distinct)` query (step 2), not by loading it here.
 
 ## 10. Deploy (ask first) and confirm the load
 
