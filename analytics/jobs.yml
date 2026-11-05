@@ -7,21 +7,15 @@ jobs:
         type: ok
         data: {table: lake.uk.price_paid}
 
-  # Test the crime staging views and rebuild fct_crime_street after duckpipe
+  # Test the crime staging view and rebuild fct_crime_street after duckpipe
   # loads new data.police.uk files. A new archive brings hundreds of files, so
   # wait for the loads to go quiet.
   - name: crime
-    select: source:uk.crime_street+ source:uk.crime_outcomes+ source:uk.crime_stop_and_search+
+    select: source:uk.crime_street+
     on:
       - topic: duckpipe.ingest
         type: ok
         data: {table: lake.uk.crime_street}
-      - topic: duckpipe.ingest
-        type: ok
-        data: {table: lake.uk.crime_outcomes}
-      - topic: duckpipe.ingest
-        type: ok
-        data: {table: lake.uk.crime_stop_and_search}
     debounce: 5m
     max_wait: 1h
 

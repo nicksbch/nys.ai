@@ -51,7 +51,7 @@ func TestRepoConfigs(t *testing.T) {
 	rc := &recent{
 		Topics: []string{"url-to-bucket.download", "preprocessor.unzip", "duckpipe.ingest", "lakeshape.run", "foreman.duckpipe-failure"},
 		Events: []event{
-			{Time: now, Topic: "duckpipe.ingest", Type: "failed", Data: map[string]any{"pipe": "crime_outcomes", "table": "lake.uk.crime_outcomes", "error": "bad CSV\nline 2"}},
+			{Time: now, Topic: "duckpipe.ingest", Type: "failed", Data: map[string]any{"pipe": "onspd", "table": "lake.uk.onspd", "error": "bad CSV\nline 2"}},
 			{Time: now.Add(-time.Minute), Topic: "duckpipe.ingest", Type: "ok", Data: map[string]any{"pipe": "crime_street", "table": "lake.uk.crime_street"}},
 		},
 		Downs: []event{
@@ -91,15 +91,15 @@ func TestRepoConfigs(t *testing.T) {
 		}
 	}
 
-	pipe := nodeByID(g, "pipe:crime_outcomes")
+	pipe := nodeByID(g, "pipe:onspd")
 	if pipe.Live == nil || pipe.Live.Type != "failed" || pipe.Live.Error != "bad CSV" {
-		t.Errorf("crime_outcomes live = %+v", pipe.Live)
+		t.Errorf("onspd live = %+v", pipe.Live)
 	}
 	if len(pipe.OnFail) != 1 || pipe.OnFail[0] != "duckpipe-failure" {
-		t.Errorf("crime_outcomes on_fail = %v", pipe.OnFail)
+		t.Errorf("onspd on_fail = %v", pipe.OnFail)
 	}
-	if !strings.Contains(pipe.At.Block, "name: crime_outcomes") || strings.Contains(pipe.At.Block, "crime_stop_and_search") {
-		t.Errorf("crime_outcomes block:\n%s", pipe.At.Block)
+	if !strings.Contains(pipe.At.Block, "name: onspd") || strings.Contains(pipe.At.Block, "lsoa_names") {
+		t.Errorf("onspd block:\n%s", pipe.At.Block)
 	}
 	for _, e := range g.Edges {
 		if e.From == "pipe:crime_street" && e.To == "job:crime" && (e.Live == nil || e.Live.Type != "ok") {
