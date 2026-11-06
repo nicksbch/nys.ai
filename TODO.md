@@ -61,6 +61,10 @@ and each can be approved on its own:
   (a long tool on `lakeshape.run`). lakeshape gets a listener, on 8103.
 - [garage-ui](garage-ui/SPEC-mcp.md): actions `transfer` (long) and
   `delete`, each with a read-only preview; nexus learns to show previews.
+- [lake-ui](lake-ui/SPEC-mcp.md) (specced 2026-11-06): read-only
+  `list_tables`, `describe_table`, `query`, so nexus can browse and
+  investigate any lake table. Column meanings from the staging models'
+  `.sql`/`.yml`: declined for now.
 
 Every action here can be called by anything holding the hub token,
 without a card. Decide "A token per profile" (mcp-hub, below) first, or at
@@ -109,6 +113,14 @@ Let foreman agents read the service configs (duckpipe pipes,
 `servers.json`, …) so they can refer to them, probably through a read-only
 MCP server behind mcp-hub. The first Gemma run on the duckpipe-failure task
 could only propose a generic fix because it couldn't see duckpipe's config.
+
+## url-to-bucket
+
+### A list of files: bulk downloads and history — `specced`
+
+Spec: [url-to-bucket/SPEC-list.md](url-to-bucket/SPEC-list.md). Add URLs with
+their S3 destinations to a durable list and the service downloads what isn't
+there yet. Every download is kept as history, whichever way it started.
 
 ## atlas (new)
 
