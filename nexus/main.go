@@ -331,6 +331,12 @@ func (a *app) message(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+	// Headers go out now, so the page knows the turn started before the
+	// first model call returns.
+	w.WriteHeader(http.StatusOK)
+	if flusher != nil {
+		flusher.Flush()
+	}
 	a.turn(context.WithoutCancel(r.Context()), c, in.Text, emit)
 	emit(event{Type: "done"})
 }

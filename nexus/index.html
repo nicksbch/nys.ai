@@ -346,11 +346,17 @@ $("#ask").addEventListener("submit", async (e) => {
 
 // send posts a message and shows the turn's events as they arrive.
 async function send(id, text) {
+  // The message and "Thinking" show at once, before the first event.
   const w = el("div", { class: "waiting" }, "Thinking");
-  const r = await fetch("/api/conversations/" + id + "/messages", { method: "POST", headers: { "Content-Type": "application/json", "X-Nexus": "1" }, body: JSON.stringify({ text }) });
-  if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || r.statusText); }
-  let shownUser = false;
-  const showUser = () => { if (!shownUser) { addItem({ type: "user", text }, true); $("#thread").append(w); shownUser = true; } };
+  addItem({ type: "user", text }, true);
+  const userBox = $("#thread").lastElementChild;
+  $("#thread").append(w);
+  scrollDown();
+  let r;
+  try {
+    r = await fetch("/api/conversations/" + id + "/messages", { method: "POST", headers: { "Content-Type": "application/json", "X-Nexus": "1" }, body: JSON.stringify({ text }) });
+    if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || r.statusText); }
+  } catch (err) { w.remove(); throw err; }
   const reader = r.body.getReader();
   const dec = new TextDecoder();
   let buf = "";
@@ -365,8 +371,7 @@ async function send(id, text) {
       if (!line.trim()) continue;
       const ev = JSON.parse(line);
       if (current && current.id !== id) continue; // the page moved on; the turn still runs
-      if (ev.type === "note") { addItem(ev, true); continue; } // comes before the message it goes with
-      showUser();
+      if (ev.type === "note") { addItem(ev); userBox.before($("#thread").lastElementChild); continue; } // goes before the message
       if (ev.type === "done") { w.remove(); continue; }
       w.remove();
       addItem(ev, true);
@@ -374,7 +379,6 @@ async function send(id, text) {
       scrollDown();
     }
   }
-  showUser();
   w.remove();
   refreshSide();
   if (current && current.id === id) {
