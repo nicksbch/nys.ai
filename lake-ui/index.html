@@ -52,12 +52,26 @@ aside li i { font-style: normal; color: var(--muted); white-space: nowrap; }
 aside .note { padding: 8px; color: var(--muted); font-size: 12px; }
 aside .note.err { color: var(--danger); white-space: pre-wrap; overflow-wrap: anywhere; }
 main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-#sql {
+#tabs { display: flex; flex: none; overflow-x: auto; background: var(--bg); border-bottom: 1px solid var(--line); }
+.tab { display: flex; flex: none; align-items: center; max-width: 220px; border-right: 1px solid var(--line); }
+.tab.on { background: var(--panel); box-shadow: inset 0 2px 0 var(--accent); }
+#tabs button { border: 0; border-radius: 0; background: none; }
+#tabs button:hover { background: var(--hover); }
+.tab-name {
+  min-width: 0; padding: 6px 4px 6px 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--muted); font: 12px/1.5 var(--mono);
+}
+.tab.on .tab-name { color: var(--text); }
+.tab.running .tab-name::before { content: "● "; color: var(--accent); }
+.tab-x { flex: none; padding: 6px 8px; color: var(--muted); line-height: 1.5; }
+#new-tab { flex: none; padding: 6px 12px; color: var(--muted); }
+.sql {
   display: block; width: 100%; height: 30vh; min-height: 80px; resize: vertical; margin: 0;
   padding: 12px 16px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0;
   background: var(--panel); color: var(--text); font: 13px/1.5 var(--mono); tab-size: 2;
 }
-#sql:focus { outline: none; box-shadow: inset 0 -2px 0 var(--accent); }
+.sql[hidden], .result[hidden] { display: none; }
+.sql:focus { outline: none; box-shadow: inset 0 -2px 0 var(--accent); }
 .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
 .bar kbd { font-family: var(--mono); font-size: 11px; opacity: .75; margin-left: 4px; }
 #status { flex: 1 1 200px; color: var(--muted); font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
@@ -70,7 +84,7 @@ button:hover:not(:disabled) { background: var(--hover); }
 button:disabled { opacity: .45; cursor: default; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 input:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
-#result { flex: 1; overflow: auto; min-height: 0; }
+.result { flex: 1; overflow: auto; min-height: 0; }
 table { border-collapse: collapse; font-size: 13px; }
 th, td { padding: 5px 10px; text-align: left; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); white-space: nowrap; }
 td { max-width: 480px; overflow: hidden; text-overflow: ellipsis; font-family: var(--mono); font-size: 12px; }
@@ -118,7 +132,7 @@ tbody tr:hover td { background: var(--hover); }
   <div id="tree"><div class="note">Loading tables…</div></div>
 </aside>
 <main>
-  <textarea id="sql" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="SQL"></textarea>
+  <div id="tabs" role="tablist"><button id="new-tab" title="New query tab" aria-label="New query tab">+</button></div>
   <div id="ac" role="listbox" hidden></div>
   <div class="bar">
     <button id="run" class="primary" title="Run the query, or the selected text">Run<kbd>⌘↵</kbd></button>
@@ -126,13 +140,13 @@ tbody tr:hover td { background: var(--hover); }
     <button id="csv" title="Download every row as CSV">Download CSV</button>
     <span id="status"></span>
   </div>
-  <div id="result"><div class="empty">One statement at a time: SELECT, FROM, DESCRIBE, SHOW, SUMMARIZE…<br>Tables are in the <code>lake</code> database, e.g. <code>SELECT * FROM raw.orders</code>.</div></div>
 </main>
+<template id="hint"><div class="empty">One statement at a time: SELECT, FROM, DESCRIBE, SHOW, SUMMARIZE…<br>Tables are in the <code>lake</code> database, e.g. <code>SELECT * FROM raw.orders</code>.</div></template>
 <script>
 const $ = s => document.querySelector(s);
-const sqlBox = $('#sql'), statusEl = $('#status'), resultEl = $('#result');
+const statusEl = $('#status');
 const NUMERIC = /^(U?(TINY|SMALL|BIG|HUGE)?INT(EGER)?|DOUBLE|FLOAT|REAL|DECIMAL.*|NUMERIC.*)$/;
-let ctrl = null, timer = null, tables = [];
+let tables = [], tabs = [], tab = null, sqlBox = null; // tab and sqlBox are the active tab and its editor
 
 function load(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function save(k, v) { try { localStorage.setItem(k, v); } catch {} }
@@ -165,45 +179,56 @@ async function post(path, sql, signal) {
   return r;
 }
 
-function busy(on, label) {
-  $('#run').disabled = $('#csv').disabled = on;
-  $('#cancel').disabled = !on;
-  clearInterval(timer);
+function setStatus(t, text) {
+  t.status = text;
+  if (t === tab) statusEl.textContent = text;
+}
+
+function syncBar() {
+  $('#run').disabled = $('#csv').disabled = !!tab.ctrl;
+  $('#cancel').disabled = !tab.ctrl;
+}
+
+function busy(t, on, label) {
+  clearInterval(t.timer);
+  t.head.classList.toggle('running', on);
   if (on) {
     const t0 = performance.now();
-    const tick = () => statusEl.textContent = `${label} ${((performance.now() - t0) / 1000).toFixed(1)} s`;
+    const tick = () => setStatus(t, `${label} ${((performance.now() - t0) / 1000).toFixed(1)} s`);
     tick();
-    timer = setInterval(tick, 100);
+    t.timer = setInterval(tick, 100);
   }
+  if (t === tab) syncBar();
 }
 
 async function run(kind) {
-  if (ctrl) return;
+  const t = tab; // the query stays with this tab if another is selected while it runs
+  if (t.ctrl) return;
   const sql = currentSQL();
   if (!sql.trim()) return;
-  ctrl = new AbortController();
-  busy(true, kind === 'csv' ? 'Exporting…' : 'Running…');
+  t.ctrl = new AbortController();
+  busy(t, true, kind === 'csv' ? 'Exporting…' : 'Running…');
   try {
-    const r = await post(kind === 'csv' ? 'api/csv' : 'api/query', sql, ctrl.signal);
+    const r = await post(kind === 'csv' ? 'api/csv' : 'api/query', sql, t.ctrl.signal);
     if (kind === 'csv') {
       const blob = await r.blob();
       const a = el('a', { href: URL.createObjectURL(blob), download: 'lake.csv' });
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-      statusEl.textContent = `Downloaded lake.csv (${fmtBytes(blob.size)})`;
+      setStatus(t, `Downloaded lake.csv (${fmtBytes(blob.size)})`);
     } else {
-      render(await r.json());
+      render(t, await r.json());
     }
   } catch (e) {
     if (e.name === 'AbortError') {
-      statusEl.textContent = 'Cancelled';
+      setStatus(t, 'Cancelled');
     } else {
-      statusEl.textContent = kind === 'csv' ? 'Export failed' : 'Failed';
-      resultEl.replaceChildren(el('div', { class: 'error' }, e.message));
+      setStatus(t, kind === 'csv' ? 'Export failed' : 'Failed');
+      t.result.replaceChildren(el('div', { class: 'error' }, e.message));
     }
   } finally {
-    ctrl = null;
-    busy(false);
+    t.ctrl = null;
+    busy(t, false);
   }
 }
 
@@ -211,11 +236,11 @@ function fmtBytes(n) {
   for (const u of ['B', 'KB', 'MB', 'GB']) { if (n < 1024 || u === 'GB') return (u === 'B' ? n : n.toFixed(1)) + ' ' + u; n /= 1024; }
 }
 
-function render(res) {
+function render(t, res) {
   const n = res.rows.length;
-  statusEl.textContent = `${n.toLocaleString()} row${n === 1 ? '' : 's'}` +
+  setStatus(t, `${n.toLocaleString()} row${n === 1 ? '' : 's'}` +
     (res.truncated ? ` (only the first ${n.toLocaleString()} shown; Download CSV has all)` : '') +
-    ` · ${res.ms.toLocaleString()} ms`;
+    ` · ${res.ms.toLocaleString()} ms`);
   const num = res.columns.map(c => NUMERIC.test(c.type));
   const head = el('tr', {}, el('th', { class: 'rn' }, '#'),
     ...res.columns.map((c, i) => el('th', { class: num[i] ? 'num' : '' }, c.name, el('small', {}, c.type), resizer())));
@@ -231,8 +256,8 @@ function render(res) {
     body.append(tr);
   });
   const table = el('table', {}, el('thead', {}, head), el('tbody', {}, body));
-  resultEl.replaceChildren(n ? table : el('div', {}, table, el('div', { class: 'empty' }, 'No rows')));
-  resultEl.scrollTo(0, 0);
+  t.result.replaceChildren(n ? table : el('div', {}, table, el('div', { class: 'empty' }, 'No rows')));
+  t.result.scrollTo(0, 0);
 }
 
 // Drag handle on a column header's right edge. The first drag pins every
@@ -286,8 +311,11 @@ function drawTree() {
     const q = el('button', { title: `SELECT * FROM ${full} LIMIT 100` }, 'query');
     q.addEventListener('click', e => {
       e.preventDefault();
+      // A new tab, so it doesn't overwrite the query being worked on.
+      if (sqlBox.value.trim() || tab.ctrl) selectTab(newTab());
       sqlBox.value = `SELECT * FROM ${ident(t.schema)}.${ident(t.name)} LIMIT 100;`;
-      save('lake-ui.sql', sqlBox.value);
+      nameTab(tab);
+      saveTabs();
       run('query');
     });
     const d = el('details', {}, el('summary', {}, el('b', { title: full }, t.name), q),
@@ -403,42 +431,123 @@ function caretXY(pos) {
   return xy;
 }
 
-sqlBox.value = load('lake-ui.sql') ?? 'SHOW ALL TABLES;';
-sqlBox.addEventListener('input', e => {
-  save('lake-ui.sql', sqlBox.value);
-  if ((e.inputType === 'insertText' && /^[\w.]$/.test(e.data)) || (e.inputType?.startsWith('delete') && !acEl.hidden)) acUpdate();
-  else acClose();
-});
-sqlBox.addEventListener('blur', acClose);
-sqlBox.addEventListener('click', acClose);
-sqlBox.addEventListener('scroll', acClose);
-sqlBox.addEventListener('keydown', e => {
-  if (e.key === ' ' && e.ctrlKey) { e.preventDefault(); acUpdate(true); return; }
-  if (!acEl.hidden && !e.metaKey && !e.ctrlKey) {
-    const n = acItems.length;
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      e.preventDefault(); acPick = (acPick + (e.key === 'ArrowDown' ? 1 : n - 1)) % n; acShow(); return;
+function editorEvents(box) {
+  box.addEventListener('input', e => {
+    nameTab(tab);
+    saveTabs();
+    if ((e.inputType === 'insertText' && /^[\w.]$/.test(e.data)) || (e.inputType?.startsWith('delete') && !acEl.hidden)) acUpdate();
+    else acClose();
+  });
+  box.addEventListener('blur', acClose);
+  box.addEventListener('click', acClose);
+  box.addEventListener('scroll', acClose);
+  box.addEventListener('keydown', e => {
+    if (e.key === ' ' && e.ctrlKey) { e.preventDefault(); acUpdate(true); return; }
+    if (!acEl.hidden && !e.metaKey && !e.ctrlKey) {
+      const n = acItems.length;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault(); acPick = (acPick + (e.key === 'ArrowDown' ? 1 : n - 1)) % n; acShow(); return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); acAccept(); return; }
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); acClose(); return; }
     }
-    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); acAccept(); return; }
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); acClose(); return; }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { acClose(); e.preventDefault(); run('query'); }
+    else if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); document.execCommand('insertText', false, '  '); }
+  });
+}
+
+// Each tab keeps its own editor and result in the page, hidden while in the
+// background, so undo history, results and column widths survive switching.
+function newTab(sql = '') {
+  const name = el('button', { class: 'tab-name', role: 'tab' });
+  const x = el('button', { class: 'tab-x', title: 'Close tab', 'aria-label': 'Close tab' }, '×');
+  const t = {
+    box: el('textarea', { class: 'sql', spellcheck: 'false', autocapitalize: 'off', autocomplete: 'off', 'aria-label': 'SQL', hidden: '' }),
+    result: el('div', { class: 'result', hidden: '' }, $('#hint').content.cloneNode(true)),
+    head: el('div', { class: 'tab' }, name, x),
+    name, ctrl: null, timer: null, status: '', scroll: [0, 0, 0],
+  };
+  t.box.value = sql;
+  editorEvents(t.box);
+  name.addEventListener('click', () => selectTab(t));
+  x.addEventListener('click', () => closeTab(t));
+  $('#tabs').insertBefore(t.head, $('#new-tab'));
+  $('main').insertBefore(t.box, $('#ac'));
+  $('main').append(t.result);
+  tabs.push(t);
+  nameTab(t);
+  return t;
+}
+
+// The tab is named after the table the query reads, else its first line.
+function nameTab(t) {
+  const sql = t.box.value.trim(), line = sql.split('\n')[0];
+  t.name.textContent = sql.match(/\bfrom\s+([\w."]+)/i)?.[1] || line || 'New query';
+  t.name.title = line;
+}
+
+function selectTab(t) {
+  acClose();
+  if (tab) {
+    // Hiding an element can lose its scroll position.
+    tab.scroll = [tab.box.scrollTop, tab.result.scrollTop, tab.result.scrollLeft];
+    t.box.style.height = tab.box.style.height; // the editor's height is dragged by hand; it stays put across tabs
+    tab.box.hidden = tab.result.hidden = true;
+    tab.head.classList.remove('on');
+    tab.name.setAttribute('aria-selected', 'false');
   }
-  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { acClose(); e.preventDefault(); run('query'); }
-  else if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); document.execCommand('insertText', false, '  '); }
-});
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && ctrl) ctrl.abort(); });
+  tab = t;
+  sqlBox = t.box;
+  t.box.hidden = t.result.hidden = false;
+  t.head.classList.add('on');
+  t.name.setAttribute('aria-selected', 'true');
+  statusEl.textContent = t.status;
+  syncBar();
+  t.box.focus({ preventScroll: true });
+  [t.box.scrollTop, t.result.scrollTop, t.result.scrollLeft] = t.scroll;
+  saveTabs();
+}
+
+function closeTab(t) {
+  t.ctrl?.abort();
+  clearInterval(t.timer);
+  const i = tabs.indexOf(t);
+  tabs.splice(i, 1);
+  if (t === tab) selectTab(tabs[i] ?? tabs[i - 1] ?? newTab());
+  t.head.remove();
+  t.box.remove();
+  t.result.remove();
+  saveTabs();
+}
+
+function saveTabs() {
+  save('lake-ui.tabs', JSON.stringify({ sql: tabs.map(t => t.box.value), active: tabs.indexOf(tab) }));
+}
+
+function restoreTabs() {
+  let saved = null;
+  try { saved = JSON.parse(load('lake-ui.tabs')); } catch {}
+  // lake-ui.sql is the editor saved before there were tabs.
+  const sqls = saved?.sql?.length ? saved.sql : [load('lake-ui.sql') ?? 'SHOW ALL TABLES;'];
+  sqls.forEach(s => newTab(s));
+  selectTab(tabs[saved?.active] ?? tabs[0]);
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && tab.ctrl) tab.ctrl.abort(); });
+$('#new-tab').addEventListener('click', () => selectTab(newTab()));
 $('#run').addEventListener('click', () => run('query'));
 $('#csv').addEventListener('click', () => run('csv'));
-$('#cancel').addEventListener('click', () => ctrl && ctrl.abort());
+$('#cancel').addEventListener('click', () => tab.ctrl?.abort());
 $('#reload').addEventListener('click', loadTables);
 $('#filter').addEventListener('input', drawTree);
 // Cut-off cells show their full value on hover.
-resultEl.addEventListener('mouseover', e => {
+$('main').addEventListener('mouseover', e => {
   const td = e.target.closest('td');
   if (td && !td.title && td.scrollWidth > td.clientWidth) td.title = td.textContent;
 });
 if (!/Mac|iPhone|iPad/.test(navigator.platform)) $('#run kbd').textContent = 'Ctrl↵';
+restoreTabs();
 loadTables();
-sqlBox.focus();
 </script>
 </body>
 </html>

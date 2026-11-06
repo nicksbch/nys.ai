@@ -5,6 +5,10 @@ A small web UI to query the DuckLake set up by `../linux-scripts/ducklake-setup.
 
 - **Query:** a SQL editor; Run (⌘↵ / Ctrl↵) runs the whole editor, or just the
   selected text. Cancel (Esc) stops the query on the server too.
+- **Tabs:** several queries open at once, each with its own editor, result and
+  status. A query keeps running while another tab is on screen; Cancel and Esc
+  stop the one in the active tab. Tabs are named after the table the query
+  reads. Their SQL is saved in the browser; results aren't kept across a reload.
 - **Autocomplete:** while typing, the editor suggests SQL keywords, schemas,
   tables (`raw.` lists raw's tables) and the columns of the tables the query
   names (`o.` after `FROM raw.orders o` too). ↑/↓ to choose, Enter or Tab to
@@ -13,7 +17,7 @@ A small web UI to query the DuckLake set up by `../linux-scripts/ducklake-setup.
   The first 10,000 rows are shown. Drag a header's right edge to resize the column.
 - **Download CSV:** every row of the query, streamed straight from DuckDB.
 - **Tables:** the lake's schemas, tables and columns in a sidebar, with a
-  filter. "query" on a table runs `SELECT * FROM <table> LIMIT 100`.
+  filter. "query" on a table runs `SELECT * FROM <table> LIMIT 100` in a new tab.
 
 The lake is attached **read-only** as `lake` and is the default database, so
 `SELECT * FROM raw.orders` works. One statement runs at a time, and it must
