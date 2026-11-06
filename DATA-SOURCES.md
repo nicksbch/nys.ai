@@ -15,11 +15,10 @@ https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads
 uk/osnpd
 https://www.ons.gov.uk/methodology/geography/ukgeographies/censusgeographies/census2021geographies
 
-## To check
 local and parliament election results
 https://electionresults.parliament.uk/
 https://commonslibrary.parliament.uk/tag/elections-data/
-
+## To check
 planning
 https://www.planning.data.gov.uk/dataset/
 

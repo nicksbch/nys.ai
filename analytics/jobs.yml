@@ -51,3 +51,12 @@ jobs:
       - topic: duckpipe.ingest
         type: ok
         data: {table: lake.uk.companies}
+
+  # Test stg_parliament_candidacies after duckpipe loads a new election's
+  # candidacies file (the view reads new rows by itself).
+  - name: parliament_candidacies
+    select: source:uk.parliament_candidacies+
+    on:
+      - topic: duckpipe.ingest
+        type: ok
+        data: {table: lake.uk.parliament_candidacies}

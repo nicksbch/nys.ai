@@ -1,0 +1,142 @@
+models:
+  - name: stg_parliament_candidacies
+    description: >
+      UK Parliament general election results (electionresults.parliament.uk),
+      one row per candidacy: a candidate standing in one constituency
+      election, with their votes, share and result position. Each row repeats
+      its parliament, general election, constituency (on the boundaries in
+      force at the time) and constituency election totals. Elections loaded:
+      2010, 2015, 2017, 2019 and 2024. Names, flags and codes are the
+      publisher's; *_url columns are the publisher's ids for each entity.
+    columns:
+      - name: candidacy_key
+        description: Grain key, election_url and candidate_result_position joined with '#'
+        tests: [not_null, unique]
+      - name: parliament_number
+        description: Number of the parliament the general election returned (55 = 2010)
+        tests: [not_null]
+      - name: parliament_summoned_on
+        description: Date the parliament first met
+      - name: parliament_dissolved_on
+        description: Date the parliament was dissolved; null for the current one
+      - name: parliament_wikidata_id
+        description: Wikidata item of the parliament (Q...)
+      - name: parliament_london_gazette_citation
+        description: London Gazette issue of the dissolution proclamation; null for the current parliament
+      - name: general_election_polling_date
+        description: Polling day of the general election
+        tests: [not_null]
+      - name: general_election_is_notional
+        description: True for a notional result (an earlier election re-counted on new boundaries); none loaded so far
+      - name: total_electorate_in_general_election
+        description: Electorate of the whole general election
+      - name: total_valid_votes_in_general_election
+        description: Valid votes in the whole general election
+      - name: total_invalid_votes_in_general_election
+        description: Invalid votes in the whole general election
+      - name: general_election_url
+        description: The general election's page; its id identifies the general election
+        tests: [not_null]
+      - name: country_name
+        description: UK country of the constituency
+        tests:
+          - not_null
+          - accepted_values:
+              severity: warn
+              values: [England, Scotland, Wales, Northern Ireland]
+      - name: country_geographic_code
+        description: ONS GSS code of the country (E92000001...)
+      - name: english_region_name
+        description: English region of the constituency; null outside England
+        tests:
+          - accepted_values:
+              severity: warn
+              values:
+                - East Midlands
+                - East of England
+                - London
+                - North East
+                - North West
+                - South East
+                - South West
+                - West Midlands
+                - Yorkshire and The Humber
+      - name: english_region_geographic_code
+        description: ONS GSS code of the English region (E12...); null outside England
+      - name: constituency_name
+        description: Constituency name
+        tests: [not_null]
+      - name: constituency_geographic_code
+        description: >
+          ONS GSS code of the constituency on the boundary set of the
+          election: 2010 boundaries (Scotland 2005) up to 2019, 2024
+          boundaries from 2024. Only the 2024 codes are ONSPD's pcon24cd.
+        tests: [not_null]
+      - name: constituency_designation
+        description: County or Borough (Burgh in Scotland), which sets the candidates' spending limit
+        tests:
+          - accepted_values:
+              severity: warn
+              values: [County, Borough, Burgh]
+      - name: boundary_set_start_date
+        description: Date the constituency's boundary set came into force
+      - name: boundary_set_end_date
+        description: Date the boundary set was replaced; null for the current set
+      - name: electorate
+        description: Electorate of the constituency at this election
+      - name: election_polling_date
+        description: Polling day of the constituency election
+        tests: [not_null]
+      - name: election_is_byelection
+        description: True for a by-election; only general elections are loaded so far
+      - name: declaration_time
+        description: Time the result was declared; null for every 2024 result
+      - name: election_valid_vote_count
+        description: Valid votes in the constituency election
+      - name: election_invalid_vote_count
+        description: Invalid (rejected) ballots in the constituency election
+      - name: election_url
+        description: The constituency election's page; its id identifies the election
+        tests: [not_null]
+      - name: election_result_summary
+        description: Result in the publisher's words, by party abbreviation ("Lab hold", "Con gain from LD")
+      - name: candidate_family_name
+        tests: [not_null]
+      - name: candidate_given_name
+      - name: candidate_mnis_id
+        description: Members' Names Information Service id; only for candidates who have been an MP
+      - name: candidate_is_sitting_mp
+        description: The candidate was an MP when Parliament was dissolved
+      - name: candidate_is_former_mp
+        description: The candidate has been an MP at any time before this election
+      - name: candidate_member_url
+        description: The candidate's member page; only for candidates who have been an MP
+      - name: main_party_name
+        description: Party the candidate stood for; null for independents and the Speaker
+      - name: main_party_abbreviation
+        description: Party abbreviation (Con, Lab, LD, SNP...), as used in election_result_summary
+      - name: main_party_mnis_id
+        description: Members' Names Information Service id of the party
+      - name: adjunct_party_name
+        description: Second party of a joint candidate (Co-operative Party for Labour and Co-operative)
+      - name: adjunct_party_abbreviation
+        description: Abbreviation of the adjunct party (Co-op)
+      - name: candidate_is_standing_as_commons_speaker
+        description: The candidate is the Speaker seeking re-election (no party)
+      - name: candidate_is_standing_as_independent
+      - name: candidate_is_notional_political_party_aggregate
+        description: True for a row that aggregates a party's votes in a notional result; none loaded so far
+      - name: candidate_vote_count
+        tests: [not_null]
+      - name: candidate_vote_share
+        description: Share of the constituency election's valid votes, 0 to 1
+      - name: candidate_vote_change
+        description: >
+          Change in the party's vote share since the previous election in the
+          constituency (share points, 0 to 1); null where there is no earlier
+          result to compare with
+      - name: majority
+        description: Winner's lead in votes over the runner-up; only on the winner's row (position 1)
+      - name: candidate_result_position
+        description: Rank of the candidate by votes in the constituency election, 1 = elected
+        tests: [not_null]

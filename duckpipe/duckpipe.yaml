@@ -96,3 +96,16 @@ pipes:
     pattern: "BasicCompanyData*.csv"
     table: uk.companies
     options: "header = true, all_varchar = true, normalize_names = true, quote = '\"'"
+
+  # UK Parliament election results (electionresults.parliament.uk), one folder
+  # per general election (uk/elections/parliament/YYYY-MM/candidacies.csv,
+  # after each election): one row per candidate per constituency election,
+  # with the parliament, general election, constituency and party repeated on
+  # each row. The CSV has a header (with a UTF-8 BOM); some names contain
+  # commas, so the quote is set. Kept as text; cast later.
+  - name: parliament_candidacies
+    bucket: home
+    prefix: uk/elections/parliament/
+    pattern: "candidacies.csv"
+    table: uk.parliament_candidacies
+    options: "header = true, all_varchar = true, normalize_names = true, quote = '\"'"
