@@ -58,7 +58,6 @@ func TestJobs(t *testing.T) {
 func TestJobErrors(t *testing.T) {
 	for jobs, want := range map[string]string{
 		"jobs:\n  - name: a\n    select: x\n    schedule: '* * * * *'\n":                                                        "there is no model x",
-		"jobs:\n  - name: a\n    select: m\n":                                                                                   "needs a schedule, on: triggers, or both",
 		"jobs:\n  - name: a\n    select: m\n    schedule: '61 * * * *'\n":                                                       `schedule "61 * * * *"`,
 		"jobs:\n  - name: a\n    select: m\n    schedule: '@daily'\n":                                                           `schedule "@daily"`,
 		"jobs:\n  - name: a\n    select: m\n    on: [{topic: lakeshape.run}]\n":                                                 "lakeshape's own events never trigger jobs",

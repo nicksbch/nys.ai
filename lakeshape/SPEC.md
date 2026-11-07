@@ -259,7 +259,9 @@ jobs:
     schedule: "0 3 * * *"                 # 5-field cron, project timezone
 ```
 
-- A job has a `name`, a `select`, and at least one of `schedule` and `on`.
+- A job has a `name` and a `select`, and a `schedule`, `on`, both, or
+  neither. A job with neither runs only when asked (`lakeshape trigger`,
+  `run_job`).
   `-exclude`, `-full-refresh` and `-vars` can be set per job as
   `exclude`, `full_refresh` and `vars`. Jobs are checked whenever the
   project loads, so `lakeshape ls` catches a broken `jobs.yml` on your Mac.

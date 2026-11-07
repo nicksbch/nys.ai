@@ -13,7 +13,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// job is what the service runs, and when: on a schedule, on relay events, or both.
+// job is what the service runs, and when: on a schedule, on relay events,
+// both, or neither (only when triggered by hand).
 type job struct {
 	Name        string         `yaml:"name"`
 	Select      string         `yaml:"select"`
@@ -78,9 +79,6 @@ func (p *project) readJobs() error {
 		}
 		if _, err := p.selectModels(j.Select, j.Exclude); err != nil {
 			return fmt.Errorf("%s: %w", where, err)
-		}
-		if j.Schedule == "" && len(j.On) == 0 {
-			return fmt.Errorf("%s: needs a schedule, on: triggers, or both", where)
 		}
 		if j.Schedule != "" {
 			s, err := parser.Parse(j.Schedule)

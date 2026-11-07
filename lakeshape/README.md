@@ -219,7 +219,9 @@ jobs:
     schedule: "0 3 * * *"            # 5-field cron, in the project's time zone
 ```
 
-A job takes `exclude`, `full_refresh: true` and `vars` too. The service runs
+A job takes `exclude`, `full_refresh: true` and `vars` too. A job with no
+`schedule` and no `on:` runs only when asked: `lakeshapectl trigger <job>` or
+the `run_job` tool. The service runs
 one run at a time. Jobs that become due together share a run. A job
 triggered during a run runs once more afterwards, however many events came.
 A schedule missed while the service was down runs once when it starts.
