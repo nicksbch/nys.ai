@@ -2,7 +2,8 @@ models:
   - name: dim_geography
     description: >
       Every UK postcode (latest ONSPD release), live and terminated, with its
-      coordinates and the areas it falls in. Area codes are ONS GSS codes,
+      coordinates and the areas it falls in, including its constituency on
+      both boundary sets (2024, and pre-2024 for the 2010-2019 elections). Area codes are ONS GSS codes,
       null where the postcode is in no such area (e.g. Channel Islands, Isle
       of Man). LSOAs are 2021 LSOAs in England and Wales, data zones in
       Scotland, super data zones in Northern Ireland.
@@ -34,7 +35,21 @@ models:
       - name: local_authority_code
         description: Local authority district / unitary authority (2025 boundaries)
       - name: constituency_code
-        description: Westminster parliamentary constituency (2024 boundaries)
+        description: Westminster parliamentary constituency (2024 boundaries), for the 2024 general election
+        tests:
+          - relationships: {to: "ref('dim_constituency')", field: constituency_code, severity: warn}
+      - name: constituency_pre2024_code
+        description: >
+          Westminster parliamentary constituency before the 2024 boundaries
+          (2010 boundaries; Scotland 2005), for the 2010, 2015, 2017 and 2019
+          general elections. From the February 2024 ONSPD release by postcode;
+          for postcodes introduced since, the one most of their output area's
+          postcodes were in. Null without a grid reference.
+        tests:
+          - relationships: {to: "ref('dim_constituency')", field: constituency_code, severity: warn}
+      - name: is_constituency_pre2024_approximate
+        description: The postcode is newer than February 2024, so constituency_pre2024_code is its output area's
+        tests: [not_null]
       - name: police_force_area_code
         description: Police force area (2023 boundaries)
       - name: region_code

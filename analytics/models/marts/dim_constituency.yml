@@ -1,0 +1,40 @@
+models:
+  - name: dim_constituency
+    description: >
+      Every Westminster parliamentary constituency a loaded general election
+      was fought in, on both boundary sets: pre-2024 (2010 boundaries,
+      Scotland 2005; the 2010-2019 elections) and 2024. 1,295 codes: five
+      Scottish constituencies kept their code in 2024. Join from
+      dim_geography or dim_lsoa on constituency_code (2024) or
+      constituency_pre2024_code, and from fct_election_result and
+      fct_election_candidacy on constituency_code.
+    columns:
+      - name: constituency_code
+        description: ONS GSS code (E14, W07, S14, N06 before 2024; E14, W07, S14, N05 from 2024)
+        tests: [not_null, unique]
+      - name: constituency_name
+        description: Constituency name, as at the latest election fought in it
+        tests: [not_null]
+      - name: designation
+        description: County or Borough (Burgh in Scotland), which sets the candidates' spending limit
+      - name: country_code
+        description: Country (E92 England, W92 Wales, S92 Scotland, N92 Northern Ireland)
+        tests:
+          - not_null
+          - accepted_values: {values: [E92000001, W92000004, S92000003, N92000002], severity: warn}
+      - name: region_code
+        description: English region (E12); null outside England
+      - name: boundaries_from
+        description: Date its boundaries came into force
+        tests: [not_null]
+      - name: boundaries_to
+        description: Date its boundaries were replaced; null while in force
+      - name: is_current
+        description: On the boundaries in force now (2024 set)
+        tests: [not_null]
+      - name: is_pre2024
+        description: On the boundaries of the 2010-2019 elections (true for both for the five unchanged Scottish ones)
+        tests: [not_null]
+      - name: general_elections
+        description: Loaded general elections fought in it
+        tests: [not_null]

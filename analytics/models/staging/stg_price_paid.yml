@@ -1,18 +1,48 @@
 models:
   - name: stg_price_paid
+    description: >
+      HM Land Registry price paid data: every residential sale in England and
+      Wales lodged since 1995, one row per transaction as it stands now (the
+      latest A/C record of each transaction; deleted ones dropped). Join
+      postcode to stg_onspd's pcds for its areas.
     columns:
       - name: transaction_id
+        description: Land Registry transaction id (a GUID, braces removed)
         tests: [not_null, unique]
       - name: price
+        description: Price paid, in GBP
         tests: [not_null]
       - name: date_of_transfer
+        description: Date the sale completed (as on the transfer deed)
         tests: [not_null]
-      - name: property_type   # Detached, Semi, Terraced, Flat, Other
+      - name: postcode
+        description: >
+          Postcode of the property, one space between outward and inward code
+          (AB1 0AA), as stg_onspd.pcds; null for about 51,000 sales, and
+          about 2,000 more match no ONSPD postcode
+        tests:
+          - relationships: {to: "ref('stg_onspd')", field: pcds, severity: warn}
+      - name: property_type
+        description: D detached, S semi-detached, T terraced, F flat or maisonette, O other
         tests:
           - accepted_values: {values: [D, S, T, F, O], severity: warn}
-      - name: duration        # Freehold, Leasehold, Unknown
+      - name: is_new_build
+        description: A newly built property (old_new Y)
+      - name: duration
+        description: Tenure, F freehold, L leasehold, U unknown
         tests:
           - accepted_values: {values: [F, L, U], severity: warn}
+      - name: paon
+        description: Primary addressable object name (house number or name)
+      - name: saon
+        description: Secondary addressable object name (flat number), where the property is part of a building
+      - name: street
+      - name: locality
+      - name: town_city
+      - name: district
+        description: Local authority district, by name (as the Land Registry names it)
+      - name: county
       - name: ppd_category_type
+        description: A standard sale at market value; B repossession, buy-to-let, sale to a company or other
         tests:
           - accepted_values: {values: [A, B], severity: warn}

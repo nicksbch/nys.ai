@@ -1,0 +1,48 @@
+models:
+  - name: dim_company
+    description: >
+      Every live company on the Companies House register (latest monthly
+      release; dissolved companies are not in it), with its type, status,
+      main activity and registered office postcode. Join postcode to
+      dim_geography for its LSOA, local authority, constituency and region.
+      The registered office is where post goes, often an accountant's or
+      formation agent's address, not where the company trades.
+    columns:
+      - name: company_number
+        description: Registration number, 8 characters (digits, or a prefix such as SC, NI, OC and digits)
+        tests: [not_null, unique]
+      - name: company_name
+        description: Registered name
+        tests: [not_null]
+      - name: postcode
+        description: >
+          Registered office postcode as entered (AB1 0AA); null for about
+          91,000, and about 17,000 more are overseas or mistyped and match no
+          ONSPD postcode
+        tests:
+          - relationships: {to: "ref('dim_geography')", field: postcode, severity: warn}
+      - name: post_town
+        description: Registered office post town, as entered
+      - name: company_category
+        description: Company type (Private Limited Company, Limited Liability Partnership...)
+        tests: [not_null]
+      - name: company_status
+        description: Status on the register (Active, Active - Proposal to Strike off, Liquidation...)
+        tests: [not_null]
+      - name: country_of_origin
+        description: Country incorporated in (United Kingdom, or the overseas jurisdiction)
+      - name: incorporation_date
+        description: Date incorporated (or registered)
+        tests: [not_null]
+      - name: sic_code
+        description: First SIC activity code; 5 digits (SIC 2007), a few older 4-digit SIC 2003; null if none supplied
+      - name: sic_text
+        description: First SIC activity, "<code> - <description>"
+      - name: accounts_category
+        description: Type of the last filed accounts (MICRO ENTITY, DORMANT, FULL...), NO ACCOUNTS FILED if none
+      - name: accounts_next_due_date
+        description: Date the next accounts are due
+      - name: confirmation_statement_next_due_date
+        description: Date the next confirmation statement is due
+      - name: charges_outstanding
+        description: Charges (mortgages) outstanding

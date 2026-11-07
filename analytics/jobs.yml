@@ -20,8 +20,8 @@ jobs:
     max_wait: 1h
 
   # Test stg_onspd and stg_onspd_feb_2024 and rebuild the geography
-  # dimensions, and fct_crime_street's LSOA mapping, after duckpipe loads a
-  # new ONSPD release.
+  # dimensions (with their constituencies), and fct_crime_street's LSOA
+  # mapping, after duckpipe loads a new ONSPD release.
   - name: onspd
     select: source:uk.onspd+
     on:
@@ -53,8 +53,8 @@ jobs:
         type: ok
         data: {table: lake.uk.ward_pcon19}
 
-  # Test stg_companies after duckpipe loads a new Companies House release (the
-  # view reads the new file by itself).
+  # Test stg_companies and rebuild dim_company after duckpipe loads a new
+  # Companies House release.
   - name: companies
     select: source:uk.companies+
     on:
@@ -62,8 +62,8 @@ jobs:
         type: ok
         data: {table: lake.uk.companies}
 
-  # Test stg_parliament_candidacies after duckpipe loads a new election's
-  # candidacies file (the view reads new rows by itself).
+  # Test stg_parliament_candidacies and rebuild dim_constituency and the
+  # election facts after duckpipe loads a new election's candidacies file.
   - name: parliament_candidacies
     select: source:uk.parliament_candidacies+
     on:

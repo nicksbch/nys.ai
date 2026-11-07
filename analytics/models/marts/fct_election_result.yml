@@ -1,0 +1,46 @@
+models:
+  - name: fct_election_result
+    description: >
+      Every constituency election of the UK general elections of 2010, 2015,
+      2017, 2019 and 2024: electorate, valid and invalid votes, the winner
+      and majority. Join constituency_code to dim_constituency for its name
+      and region; to reach postcodes or LSOAs, join dim_geography (or
+      dim_lsoa) on constituency_code for 2024 and constituency_pre2024_code
+      for 2010-2019. Turnout is (valid_votes + invalid_votes) / electorate;
+      sum the parts, not a ratio.
+    columns:
+      - name: election_url
+        description: The constituency election's page on electionresults.parliament.uk; its id identifies the election
+        tests: [not_null, unique]
+      - name: election_date
+        description: Polling day of the general election
+        tests: [not_null]
+      - name: parliament_number
+        description: Number of the parliament the general election returned (55 = 2010)
+        tests: [not_null]
+      - name: constituency_code
+        description: Constituency, on the boundary set of the election
+        tests:
+          - not_null
+          - relationships: {to: "ref('dim_constituency')", field: constituency_code}
+      - name: boundaries_from
+        description: Date the constituency's boundary set came into force (2005-04-12, 2010-04-13 or 2024-05-31)
+      - name: is_byelection
+        description: True for a by-election; only general elections are loaded so far
+      - name: electorate
+        description: Registered electors in the constituency
+      - name: valid_votes
+        description: Valid votes cast
+      - name: invalid_votes
+        description: Rejected ballots
+      - name: candidates
+        description: Candidates standing
+        tests: [not_null]
+      - name: majority
+        description: Winner's lead in votes over the runner-up
+      - name: winning_party_name
+        description: Winner's party; null for an independent or the Speaker
+      - name: winning_party_abbreviation
+        description: Winner's party abbreviation (Con, Lab, LD, SNP...)
+      - name: result_summary
+        description: Result in the publisher's words ("Lab hold", "Con gain from LD")

@@ -1,0 +1,58 @@
+models:
+  - name: fct_election_candidacy
+    description: >
+      Every candidate in the constituency elections of the UK general
+      elections of 2010, 2015, 2017, 2019 and 2024, with party, votes, share
+      and position. Join election_url to fct_election_result for the
+      constituency election's totals, and constituency_code to
+      dim_constituency (and through it to dim_geography, as for
+      fct_election_result).
+    columns:
+      - name: candidacy_key
+        description: Grain key, election_url and result_position joined with '#'
+        tests: [not_null, unique]
+      - name: election_url
+        description: The constituency election (fct_election_result)
+        tests:
+          - not_null
+          - relationships: {to: "ref('fct_election_result')", field: election_url}
+      - name: election_date
+        description: Polling day of the general election
+        tests: [not_null]
+      - name: constituency_code
+        description: Constituency, on the boundary set of the election
+        tests:
+          - not_null
+          - relationships: {to: "ref('dim_constituency')", field: constituency_code}
+      - name: candidate_family_name
+        tests: [not_null]
+      - name: candidate_given_name
+      - name: candidate_mnis_id
+        description: Members' Names Information Service id; only for candidates who have been an MP
+      - name: party_name
+        description: Party stood for; null for independents and the Speaker
+      - name: party_abbreviation
+        description: Party abbreviation (Con, Lab, LD, SNP...)
+      - name: adjunct_party_name
+        description: Second party of a joint candidate (Co-operative Party for Labour and Co-operative)
+      - name: is_sitting_mp
+        description: An MP when Parliament was dissolved
+      - name: is_former_mp
+        description: Has been an MP at any time before this election
+      - name: is_speaker
+        description: The Speaker seeking re-election
+      - name: is_independent
+        description: Standing as an independent
+      - name: votes
+        description: Votes for the candidate
+        tests: [not_null]
+      - name: vote_share
+        description: Share of the constituency election's valid votes, 0 to 1 (non-additive; sum votes instead)
+      - name: vote_share_change
+        description: Change in the party's share since the previous election in the constituency, 0 to 1; null where there is none
+      - name: result_position
+        description: Rank by votes, 1 = elected
+        tests: [not_null]
+      - name: is_elected
+        description: Won the seat (result_position 1)
+        tests: [not_null]

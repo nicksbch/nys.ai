@@ -1,11 +1,40 @@
 models:
   - name: stg_crime_street
+    description: >
+      data.police.uk street-level crime: every crime and anti-social
+      behaviour incident reported by the police forces of England, Wales and
+      Northern Ireland, one row per incident per month and force file
+      (latest load of each file). Locations are anonymised to a nearby
+      point, so the LSOA is the lowest reliable level. Join lsoa_code to
+      stg_onspd's lsoa21cd, or lsoa11cd for the 2011 LSOAs police.uk used
+      until it moved to the 2021 ones (fct_crime_street maps both to 2021).
+      Months loaded: September 2020 on.
     columns:
+      - name: crime_id
+        description: Police.uk crime id (a 64-character hash); null for anti-social behaviour, and not unique
       - name: month
+        description: First day of the month the crime was recorded
         tests: [not_null]
+      - name: reported_by
+        description: Force that provided the data
       - name: falls_within
+        description: Force whose area the crime falls in (the same as reported_by in every row loaded)
         tests: [not_null]
+      - name: longitude
+        description: Longitude (WGS84) of the anonymised point; null without a location
+      - name: latitude
+        description: Latitude (WGS84) of the anonymised point; null without a location
+      - name: location
+        description: Description of the anonymised point ("On or near Supermarket"); "On or near " with no place for some
+      - name: lsoa_code
+        description: >
+          LSOA of the anonymised point (ONS GSS code, E01 or W01; Northern
+          Ireland's crimes have none); null without a location. 2011 or 2021
+          LSOAs, depending on the month
+      - name: lsoa_name
+        description: LSOA name as police.uk published it
       - name: crime_type
+        description: Crime category (police.uk's 14 categories, including Anti-social behaviour)
         tests:
           - not_null
           - accepted_values:
@@ -25,3 +54,7 @@ models:
                 - Theft from the person
                 - Vehicle crime
                 - Violence and sexual offences
+      - name: last_outcome_category
+        description: Latest outcome as of the month published (Under investigation, Investigation complete; no suspect identified...); null for anti-social behaviour
+      - name: context
+        description: Extra information from the force; null in all but a few dozen rows
