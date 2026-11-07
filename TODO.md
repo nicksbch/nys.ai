@@ -61,7 +61,7 @@ and each can be approved on its own:
   (a long tool on `lakeshape.run`). lakeshape gets a listener, on 8103.
 - [garage-ui](garage-ui/SPEC-mcp.md): actions `transfer` (long) and
   `delete`, each with a read-only preview; nexus learns to show previews.
-- [lake-ui](lake-ui/SPEC-mcp.md) (specced 2026-11-06): read-only
+- `done` [lake-ui](lake-ui/SPEC-mcp.md) (approved and built 2026-11-06, not deployed): read-only
   `list_tables`, `describe_table`, `query`, so nexus can browse and
   investigate any lake table. Column meanings from the staging models'
   `.sql`/`.yml`: declined for now.

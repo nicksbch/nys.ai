@@ -96,8 +96,14 @@ LAKE_UI_AUTH=$new_login
 EOF
   umask 022
 fi
-# Holds the S3 secret and both passwords. systemd reads it as root, so the
-# service itself needs no access.
+# The MCP token lets mcp-hub use the tools at /mcp; mcp-hub's install copies
+# it. Added to older installs on their next deploy.
+if ! grep -q '^LAKE_UI_MCP_TOKEN=' "$ENV_FILE"; then
+  log "Adding an MCP token to $ENV_FILE"
+  echo "LAKE_UI_MCP_TOKEN=$(openssl rand -hex 24)" >>"$ENV_FILE"
+fi
+# Holds the S3 secret, both passwords and the MCP token. systemd reads it as
+# root, so the service itself needs no access.
 chown root:root "$ENV_FILE"
 chmod 0600 "$ENV_FILE"
 PG_PASSWORD=$(grep '^PGPASSWORD=' "$ENV_FILE" | cut -d= -f2-)
@@ -187,6 +193,7 @@ cat <<EOF
 
 lake-ui is running.
   URL     : http://${host_ip:-localhost}:$port
+  MCP     : http://${host_ip:-localhost}:$port/mcp (token: sudo grep LAKE_UI_MCP_TOKEN $ENV_FILE)
   Config  : $ENV_FILE
   Logs    : journalctl -u lake-ui -f
 EOF

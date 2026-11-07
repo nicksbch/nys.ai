@@ -52,7 +52,7 @@ EOF
   umask 022
 fi
 # Copy the MCP tokens of the upstreams installed on this server.
-for app in vigil semantic url-to-bucket duckpipe lakeshape; do
+for app in vigil semantic url-to-bucket duckpipe lakeshape lake-ui; do
   var="$(tr a-z- A-Z_ <<<"$app")_MCP_TOKEN"
   token=$(sed -n "s/^$var=//p" "/etc/$app.env" 2>/dev/null || true)
   if [[ -n $token ]] && ! grep -q "^$var=" "$ENV_FILE"; then
@@ -89,7 +89,7 @@ log "Installing $UNIT"
 cat >"$UNIT" <<EOF
 [Unit]
 Description=mcp-hub - one MCP endpoint for every service
-After=network-online.target vigil.service relay.service semantic.service url-to-bucket.service duckpipe.service lakeshape.service
+After=network-online.target vigil.service relay.service semantic.service url-to-bucket.service duckpipe.service lakeshape.service lake-ui.service
 Wants=network-online.target
 
 [Service]

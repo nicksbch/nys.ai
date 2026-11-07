@@ -18,6 +18,12 @@ A small web UI to query the DuckLake set up by `../linux-scripts/ducklake-setup.
 - **Download CSV:** every row of the query, streamed straight from DuckDB.
 - **Tables:** the lake's schemas, tables and columns in a sidebar, with a
   filter. "query" on a table runs `SELECT * FROM <table> LIMIT 100` in a new tab.
+- **MCP tools** at `/mcp`, for agents through mcp-hub (`lake-ui__*`, in
+  nexus's profile), all read-only: `list_tables` (tables and their number
+  of columns, for one schema or all), `describe_table` (columns and row
+  count) and `query` (100 rows by default, at most 500, cells cut at 300
+  characters, stopped after 110 s). The same rules and credentials as the
+  page. Spec: [SPEC-mcp.md](SPEC-mcp.md).
 
 The lake is attached **read-only** as `lake` and is the default database, so
 `SELECT * FROM raw.orders` works. One statement runs at a time, and it must
@@ -51,6 +57,7 @@ Whatever SQL is typed runs with them:
 | File          | What it is                                                                     |
 |---------------|--------------------------------------------------------------------------------|
 | `main.go`     | The server: JSON API for the page, results, CSV download                       |
+| `mcp.go`      | The MCP tools at `/mcp`, behind `LAKE_UI_MCP_TOKEN`                            |
 | `duck.go`     | Runs scripts with the `duckdb` CLI; attaches the lake; wraps the SQL in `query()` |
 | `index.html`  | The page (plain HTML and JavaScript, built into the binary)                    |
 | `deploy.sh`   | Run on your Mac: builds the binary and installs it on the server               |
@@ -65,7 +72,10 @@ Whatever SQL is typed runs with them:
 Run `ducklake-setup.sh` first (`deploy-all.sh` does it in the right order).
 The first install prints the login; it is also in `/etc/lake-ui.env`
 (`sudo grep LAKE_UI_AUTH /etc/lake-ui.env`). The UI listens on
-`http://<server>:8092`.
+`http://<server>:8092`, and the MCP tools on `/mcp` with the bearer token
+`LAKE_UI_MCP_TOKEN` from the same file (added on the next deploy to older
+installs). After deploying lake-ui the first time, deploy mcp-hub so it
+copies the token: `ONLY="lake-ui mcp-hub" ../deploy-all.sh`.
 
 | install.sh setting | Default                  | Meaning                                      |
 |--------------------|--------------------------|----------------------------------------------|
@@ -106,6 +116,8 @@ read-only and `query()` still refuses writes.
 | `-state-dir`    | DuckDB's own                               | Where DuckDB keeps extensions and temp files |
 | `-max-rows`     | `10000`                                    | Rows shown per query (CSV has no limit)    |
 | `-timeout`      | `5m`                                       | Longest a query may run                    |
+| `-mcp-token`    | `$LAKE_UI_MCP_TOKEN`                       | Serve the MCP tools at `/mcp` behind this bearer token; none without it |
+| `-mcp-timeout`  | `110s`                                     | Longest an MCP tool call may run; under mcp-hub's 120 s for lake-ui |
 
 ## Logs
 

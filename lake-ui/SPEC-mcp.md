@@ -1,4 +1,4 @@
-# lake-ui MCP: spec (specced 2026-11-06)
+# lake-ui MCP: spec (approved 2026-11-06)
 
 lake-ui serves its own MCP tools, so an agent can browse the lake's tables
 and run read-only SQL on them, through [mcp-hub](../mcp-hub/SPEC.md) as

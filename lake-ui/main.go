@@ -17,6 +17,9 @@
 // Any SQL typed in the page runs with these credentials, so give it read-only
 // ones (install.sh does).
 //
+// With -mcp-token (or LAKE_UI_MCP_TOKEN), the same is at /mcp as read-only
+// MCP tools (list_tables, describe_table, query), for mcp-hub (mcp.go).
+//
 // Usage:
 //
 //	go build -o lake-ui . && ./lake-ui    # then open http://127.0.0.1:8092
@@ -50,10 +53,11 @@ const (
 )
 
 type server struct {
-	duck    *duck
-	maxRows int
-	timeout time.Duration
-	slots   chan struct{}
+	duck       *duck
+	maxRows    int
+	timeout    time.Duration
+	mcpTimeout time.Duration // per MCP tool call, inside mcp-hub's timeout for lake-ui
+	slots      chan struct{}
 }
 
 func main() {
@@ -65,6 +69,8 @@ func main() {
 	stateDir := flag.String("state-dir", "", "directory for DuckDB's extensions and temp files (default: DuckDB's own)")
 	maxRows := flag.Int("max-rows", 10000, "rows shown per query (CSV downloads have no limit)")
 	timeout := flag.Duration("timeout", 5*time.Minute, "longest a query may run")
+	mcpToken := flag.String("mcp-token", os.Getenv("LAKE_UI_MCP_TOKEN"), "serve the MCP tools at /mcp, behind this bearer token")
+	mcpTimeout := flag.Duration("mcp-timeout", 110*time.Second, "longest an MCP tool call may run (keep it under mcp-hub's timeout for lake-ui)")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -74,11 +80,14 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	s := &server{duck: d, maxRows: *maxRows, timeout: *timeout, slots: make(chan struct{}, maxRunning)}
+	s := &server{duck: d, maxRows: *maxRows, timeout: *timeout, mcpTimeout: *mcpTimeout, slots: make(chan struct{}, maxRunning)}
+	if *mcpToken == "" {
+		log.Print("LAKE_UI_MCP_TOKEN is not set: no MCP tools at /mcp")
+	}
 
 	srv := &http.Server{
 		Addr:              *listen,
-		Handler:           guard(*auth, s.routes()),
+		Handler:           s.handler(*auth, *mcpToken),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	go func() {
@@ -91,6 +100,19 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
+}
+
+// handler serves the page behind guard, and with mcpToken the MCP tools at
+// /mcp behind that bearer token instead: /mcp is for mcp-hub, not a browser.
+func (s *server) handler(auth, mcpToken string) http.Handler {
+	page := guard(auth, s.routes())
+	if mcpToken == "" {
+		return page
+	}
+	mux := http.NewServeMux()
+	mux.Handle("/mcp", bearerAuth(mcpToken, s.mcpHandler()))
+	mux.Handle("/", page)
+	return mux
 }
 
 // guard adds optional basic auth, and requires a custom header on every
@@ -168,22 +190,23 @@ func writeJSON(w http.ResponseWriter, code int, v any) error {
 	return json.NewEncoder(w).Encode(v)
 }
 
-// begin waits for a free query slot. done frees it.
-func (s *server) begin(r *http.Request) (ctx context.Context, done func(), err error) {
-	ctx, cancel := context.WithTimeout(r.Context(), s.timeout)
+// begin waits for a free query slot and gives the query timeout to run in.
+// done frees the slot.
+func (s *server) begin(ctx context.Context, timeout time.Duration) (_ context.Context, done func(), err error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	select {
 	case s.slots <- struct{}{}:
 		return ctx, func() { <-s.slots; cancel() }, nil
 	case <-ctx.Done():
 		cancel()
-		return nil, nil, s.stopped(ctx.Err())
+		return nil, nil, stopped(ctx.Err(), timeout)
 	}
 }
 
-// stopped explains a query that hit the timeout.
-func (s *server) stopped(err error) error {
+// stopped explains a query that hit its timeout.
+func stopped(err error, timeout time.Duration) error {
 	if errors.Is(err, context.DeadlineExceeded) {
-		return fail(http.StatusGatewayTimeout, "the query ran longer than %s and was stopped", s.timeout)
+		return fail(http.StatusGatewayTimeout, "the query ran longer than %s and was stopped", timeout)
 	}
 	return err
 }
@@ -214,17 +237,27 @@ type table struct {
 
 // tables lists the lake's tables with their columns.
 func (s *server) tables(w http.ResponseWriter, r *http.Request) error {
-	ctx, done, err := s.begin(r)
+	ctx, done, err := s.begin(r.Context(), s.timeout)
 	if err != nil {
 		return err
 	}
 	defer done()
+	tables, err := s.listTables(ctx)
+	if err != nil {
+		return stopped(err, s.timeout)
+	}
+	return writeJSON(w, http.StatusOK, tables)
+}
+
+// listTables reads the lake's tables and their columns from DuckDB, in
+// schema, table and column order. The caller holds a query slot.
+func (s *server) listTables(ctx context.Context) ([]*table, error) {
 	var out bytes.Buffer
-	err = s.duck.run(ctx, ".output\n.mode json\n"+
+	err := s.duck.run(ctx, ".output\n.mode json\n"+
 		"SELECT schema_name, table_name, column_name, data_type FROM duckdb_columns() "+
 		"WHERE database_name = "+ql(lakeAlias)+" ORDER BY schema_name, table_name, column_index;\n", &out)
 	if err != nil {
-		return s.stopped(err)
+		return nil, err
 	}
 	// No tables print nothing at all.
 	tables := []*table{}
@@ -237,7 +270,7 @@ func (s *server) tables(w http.ResponseWriter, r *http.Request) error {
 			Type   string `json:"data_type"`
 		}
 		if err := dec.Decode(&rows); err != nil {
-			return fmt.Errorf("reading duckdb output: %w", err)
+			return nil, fmt.Errorf("reading duckdb output: %w", err)
 		}
 		for _, c := range rows {
 			if n := len(tables); n == 0 || tables[n-1].Schema != c.Schema || tables[n-1].Name != c.Table {
@@ -247,7 +280,7 @@ func (s *server) tables(w http.ResponseWriter, r *http.Request) error {
 			t.Columns = append(t.Columns, column{c.Column, c.Type})
 		}
 	}
-	return writeJSON(w, http.StatusOK, tables)
+	return tables, nil
 }
 
 type result struct {
@@ -257,33 +290,43 @@ type result struct {
 	Ms        int64               `json:"ms"`
 }
 
-// query runs one statement and returns up to maxRows of its rows. DESCRIBE
-// gives the columns in order (and for an empty result, which the CLI prints
-// nothing for), then the rows follow as JSON objects keyed by those names.
+// query runs one statement and returns up to maxRows of its rows.
 func (s *server) query(w http.ResponseWriter, r *http.Request) error {
 	from, err := readSQL(r)
 	if err != nil {
 		return err
 	}
-	ctx, done, err := s.begin(r)
+	ctx, done, err := s.begin(r.Context(), s.timeout)
 	if err != nil {
 		return err
 	}
 	defer done()
+	res, err := s.runQuery(ctx, from, s.maxRows)
+	if err != nil {
+		return stopped(err, s.timeout)
+	}
+	return writeJSON(w, http.StatusOK, res)
+}
+
+// runQuery runs from (made by wrap) and returns up to maxRows of its rows.
+// DESCRIBE gives the columns in order (and for an empty result, which the
+// CLI prints nothing for), then the rows follow as JSON objects keyed by
+// those names. The caller holds a query slot.
+func (s *server) runQuery(ctx context.Context, from string, maxRows int) (*result, error) {
 	start := time.Now()
 	var out bytes.Buffer
-	err = s.duck.run(ctx, ".output\n.mode json\n"+
+	err := s.duck.run(ctx, ".output\n.mode json\n"+
 		"DESCRIBE SELECT * FROM "+from+";\n"+
-		"SELECT * FROM "+from+" LIMIT "+strconv.Itoa(s.maxRows+1)+";\n", &out)
+		"SELECT * FROM "+from+" LIMIT "+strconv.Itoa(maxRows+1)+";\n", &out)
 	if err != nil {
-		return s.stopped(err)
+		return nil, err
 	}
-	res, err := parseResult(out.Bytes(), s.maxRows)
+	res, err := parseResult(out.Bytes(), maxRows)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	res.Ms = time.Since(start).Milliseconds()
-	return writeJSON(w, http.StatusOK, res)
+	return res, nil
 }
 
 func parseResult(out []byte, maxRows int) (*result, error) {
@@ -341,7 +384,7 @@ func (s *server) csv(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	ctx, done, err := s.begin(r)
+	ctx, done, err := s.begin(r.Context(), s.timeout)
 	if err != nil {
 		return err
 	}
@@ -354,7 +397,7 @@ func (s *server) csv(w http.ResponseWriter, r *http.Request) error {
 		log.Printf("%s %s: %v", r.Method, r.URL, err)
 		panic(http.ErrAbortHandler)
 	}
-	return s.stopped(err)
+	return stopped(err, s.timeout)
 }
 
 // lazyWriter sets the CSV headers on the first write, so an error before any

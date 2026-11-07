@@ -10,7 +10,8 @@ so "did it work?" and "now the arm64 one" work as follow-ups.
   today url-to-bucket's `download`, plus `list_buckets`, `list_objects`,
   `list_downloads` and `suggest_key`, vigil's six read-only tools
   (system, alerts, jobs, events, runs), duckpipe's (pipes, load history,
-  stop all, resume) and lakeshape's (jobs, run a job). `suggest_key`
+  stop all, resume), lakeshape's (jobs, run a job) and lake-ui's (list
+  tables, describe a table, run read-only SQL on the lake). `suggest_key`
   finds the folders already holding files named like the one to download
   (`2023-08.zip` next to `uk/crime/2026-08.zip`) and hands the model the
   full key, so the card shows exactly where the file will go.

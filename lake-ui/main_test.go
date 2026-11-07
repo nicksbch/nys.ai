@@ -64,6 +64,13 @@ func TestParseResultEmpty(t *testing.T) {
 // database standing in for the lake.
 func newTestServer(t *testing.T, auth string) *httptest.Server {
 	t.Helper()
+	ts := httptest.NewServer(testServer(t).handler(auth, ""))
+	t.Cleanup(ts.Close)
+	return ts
+}
+
+func testServer(t *testing.T) *server {
+	t.Helper()
 	bin, err := exec.LookPath("duckdb")
 	if err != nil {
 		t.Skip("duckdb CLI not on PATH")
@@ -73,10 +80,7 @@ func newTestServer(t *testing.T, auth string) *httptest.Server {
 		"CREATE TABLE raw.orders (id INTEGER, note VARCHAR, big HUGEINT)",
 		"INSERT INTO raw.orders VALUES (1, 'a', 12345678901234567890), (2, NULL, 0), (3, 'c,d', 1)",
 	)}
-	s := &server{duck: d, maxRows: 2, timeout: time.Minute, slots: make(chan struct{}, maxRunning)}
-	ts := httptest.NewServer(guard(auth, s.routes()))
-	t.Cleanup(ts.Close)
-	return ts
+	return &server{duck: d, maxRows: 2, timeout: time.Minute, mcpTimeout: time.Minute, slots: make(chan struct{}, maxRunning)}
 }
 
 func post(t *testing.T, ts *httptest.Server, path, sql string) (int, string) {
