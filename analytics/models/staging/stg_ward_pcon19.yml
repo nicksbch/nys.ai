@@ -1,0 +1,34 @@
+models:
+  - name: stg_ward_pcon19
+    description: >
+      ONS lookup from electoral wards (December 2019) to the Westminster
+      parliamentary constituencies and local authority districts they fall
+      in, UK. One row per ward and constituency; a ward split between
+      constituencies has a row for each. The constituencies are the pre-2024
+      ones (2010 boundaries; Scotland 2005), the same codes as
+      stg_onspd_feb_2024's pcon and stg_parliament_candidacies'
+      constituency_geographic_code for the 2010-2019 elections.
+    columns:
+      - name: ward_pcon_key
+        description: Grain key, wd19cd and pcon19cd joined with '#'
+        tests: [not_null, unique]
+      - name: wd19cd
+        description: Electoral ward / division (December 2019; ONS GSS code, E05, W05, S13, N08)
+        tests: [not_null]
+      - name: wd19nm
+        description: Ward name
+        tests: [not_null]
+      - name: pcon19cd
+        description: Westminster parliamentary constituency (pre-2024 boundaries; E14, W07, S14, N06)
+        tests:
+          - not_null
+          - relationships: {to: "ref('stg_onspd_feb_2024')", field: pcon, severity: warn}
+      - name: pcon19nm
+        description: Constituency name
+        tests: [not_null]
+      - name: lad19cd
+        description: Local authority district / unitary authority (December 2019)
+        tests: [not_null]
+      - name: lad19nm
+        description: Local authority name
+        tests: [not_null]

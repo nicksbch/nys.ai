@@ -1,0 +1,136 @@
+models:
+  - name: stg_onspd_feb_2024
+    description: >
+      ONS Postcode Directory, February 2024 release: every UK postcode, live
+      and terminated, with the areas it fell in at the time. The last release
+      before the 2024 constituency boundaries, kept for pcon, the
+      constituencies of the 2010, 2015, 2017 and 2019 general elections
+      (stg_parliament_candidacies' constituency_geographic_code where
+      boundary_set_end_date is 2024-05-30). Area codes are ONS GSS codes, as
+      at February 2024 unless the column name gives a year. Null where the
+      postcode is in no such area. The current release is stg_onspd.
+    columns:
+      - name: pcds
+        description: Postcode, one space between outward and inward code (AB1 0AA)
+        tests: [not_null, unique]
+      - name: pcd
+        description: Postcode padded to 7 characters (AB1 0AA, AB10 1AA, AB101AA)
+        tests: [not_null, unique]
+      - name: pcd2
+        description: Postcode padded to 8 characters
+      - name: dointr
+        description: Month the postcode was introduced
+        tests: [not_null]
+      - name: doterm
+        description: Month the postcode was terminated; null if live in February 2024
+      - name: is_large_user
+        description: A large-user postcode (one address getting 25+ items a day)
+        tests: [not_null]
+      - name: osgrdind
+        description: >
+          Quality of the grid reference, 1 (within the building of the
+          matched address) to 8; 9 = no grid reference
+        tests:
+          - not_null
+          - accepted_values: {values: ['1', '2', '3', '4', '5', '6', '8', '9'], severity: warn}
+      - name: oseast1m
+        description: OS grid easting, 1 m (Irish grid in Northern Ireland)
+      - name: osnrth1m
+        description: OS grid northing, 1 m (Irish grid in Northern Ireland)
+      - name: lat
+        description: Latitude (WGS84)
+      - name: long
+        description: Longitude (WGS84)
+      - name: ctry
+        description: Country (E92 England, W92 Wales, S92 Scotland, N92 Northern Ireland, L93 Channel Islands, M83 Isle of Man)
+        tests:
+          - not_null
+          - accepted_values:
+              severity: warn
+              values: [E92000001, W92000004, S92000003, N92000002, L93000001, M83000003]
+      - name: rgn
+        description: Region (England)
+      - name: oscty
+        description: County (England, two-tier areas)
+      - name: ced
+        description: County electoral division
+      - name: oslaua
+        description: Local authority district / unitary authority
+      - name: osward
+        description: Electoral ward / division
+      - name: parish
+        description: Parish / non-civil parished area (England), community (Wales)
+      - name: pcon
+        description: >
+          Westminster parliamentary constituency before the 2024 boundaries:
+          2010 boundaries in England, Wales and Northern Ireland (E14, W07,
+          N06), 2005 boundaries in Scotland (S14). Null for postcodes without
+          a grid reference.
+      - name: eer
+        description: European electoral region
+      - name: teclec
+        description: Former Learning and Skills Council / enterprise region
+      - name: itl
+        description: International Territorial Level (former NUTS)
+      - name: ttwa
+        description: Travel to work area (2011)
+      - name: bua11
+        description: Built-up area (2011)
+      - name: buasd11
+        description: Built-up area sub-division (2011)
+      - name: npark
+        description: National park
+      - name: pfa
+        description: Police force area
+      - name: calncv
+        description: Cancer alliance
+      - name: lep1
+        description: Local enterprise partnership (first)
+      - name: lep2
+        description: Local enterprise partnership (second, where the area is in two)
+      - name: oshlthau
+        description: Former strategic health authority / health board
+      - name: nhser
+        description: NHS England region
+      - name: icb
+        description: Integrated care board
+      - name: sicbl
+        description: Sub-ICB location (England), local health board (Wales), and equivalents
+      - name: pct
+        description: Former primary care trust / organisation
+      - name: oa21
+        description: 2021 census output area
+      - name: lsoa21
+        description: 2021 census lower layer super output area
+      - name: msoa21
+        description: 2021 census middle layer super output area
+      - name: oa11
+        description: 2011 census output area
+      - name: lsoa11
+        description: 2011 census lower layer super output area
+      - name: msoa11
+        description: 2011 census middle layer super output area
+      - name: wz11
+        description: 2011 census workplace zone
+      - name: ru11ind
+        description: 2011 rural-urban classification of the output area
+      - name: oac11
+        description: 2011 output area classification (supergroup, group, subgroup)
+      - name: oa01
+        description: 2001 census output area
+      - name: lsoa01
+        description: 2001 census lower layer super output area
+      - name: msoa01
+        description: 2001 census middle layer super output area
+      - name: ur01ind
+        description: 2001 urban-rural classification
+      - name: oac01
+        description: 2001 output area classification
+      - name: statsward
+        description: 2005 statistical ward
+      - name: casward
+        description: 2003 census area statistics ward
+      - name: streg
+        description: Former standard statistical region (0 = none)
+      - name: imd
+        description: Index of multiple deprivation rank of the LSOA, within its own country (1 = most deprived); null without a grid reference

@@ -54,6 +54,9 @@ pipes:
   # quarterly): every UK postcode, live and terminated, with the areas it
   # falls in. Each release is a full snapshot that replaces the last. The CSV
   # has a header. Kept as text; cast later. The folder is spelled osnpd.
+  # ONSPD_FEB_2024_UK/Data/ONSPD_FEB_2024_UK.csv, the last release before the
+  # 2024 constituency boundaries, is loaded here too, for its older columns
+  # (pcon, the 2010/2005 constituencies); stg_onspd_feb_2024 reads it.
   - name: onspd
     bucket: home
     prefix: uk/osnpd/
@@ -83,6 +86,19 @@ pipes:
     pattern: "MSOA (2021) *.csv"
     table: uk.msoa_names
     options: "header = true, all_varchar = true, names = ['msoa21cd', 'msoa21nm'], quote = '\"'"
+
+  # ONS Ward to Westminster Parliamentary Constituency to LAD (December 2019)
+  # lookup (WD19_PCON19_LAD19_UK/WD19_PCON19_LAD19_UK_LU_<id>.csv, a one-off
+  # download from the Open Geography Portal): one row per ward and
+  # constituency it falls in, with the local authority. The CSV has a header
+  # (with a UTF-8 BOM); some names contain commas, so the quote is set. Kept
+  # as text.
+  - name: ward_pcon19
+    bucket: home
+    prefix: uk/osnpd/WD19_PCON19_LAD19_UK/
+    pattern: "WD19_PCON19_LAD19_UK_LU*.csv"
+    table: uk.ward_pcon19
+    options: "header = true, all_varchar = true, normalize_names = true, quote = '\"'"
   # Companies House basic company data, unzipped by preprocessor into
   # uk/companies-house/extracted/BasicCompanyDataAsOneFile-YYYY-MM-DD.csv
   # (monthly): every live company on the register, one row each. Each release

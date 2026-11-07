@@ -1,6 +1,8 @@
 -- ONS Postcode Directory, one row per UK postcode, live or terminated, with
 -- the areas it falls in. Each quarterly release is a full snapshot that
--- replaces the last, so only the rows of the latest loaded file are kept.
+-- replaces the last, so only the rows of the latest release are kept: the
+-- latest by the month in the file name (ONSPD_<MON>_<YYYY>_UK.csv), not by
+-- load time, as an older release (stg_onspd_feb_2024) can be loaded later.
 with raw as (
     -- duckpipe keeps each CSV row in record, every value as text.
     select
@@ -60,7 +62,7 @@ with raw as (
         _file,
         _loaded_at
     from {{ source('uk', 'onspd') }}
-    qualify _file = arg_max(_file, _loaded_at) over ()
+    qualify _file = arg_max(_file, strptime(regexp_extract(_file, 'ONSPD_([A-Z]{3}_[0-9]{4})_UK', 1), '%b_%Y')) over ()
 )
 select
     pcds,  -- e.g. AB1 0AA, the format price paid uses
